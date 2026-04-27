@@ -1,0 +1,62 @@
+server:
+  port: 8080
+
+spring:
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: 
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    open-in-view: false
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        physical_naming_strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+        dialect: org.hibernate.dialect.H2Dialect
+
+# 인증/보안 설정
+security:
+  auth:
+    access-ttl-seconds: 900
+    refresh-ttl-seconds: 1209600
+    idle-ttl-seconds: 3600
+    concurrent-policy: KICK_OLD
+    refresh-cookie-name: REFRESH_TOKEN
+    refresh-cookie-path: /api/auth
+    refresh-cookie-secure: false
+    refresh-cookie-same-site: Lax
+  jwt:
+    secret: +kVtu46jJtI6mRS/zjhmQDRWCeec6EGj5Hom/bUsFBT8Rt8Ib21NnqWBAGyrXnAbSgzVpnw3luPTkNwgmRZM0A==
+
+logging:
+  level:
+    com.aicc.silverlink: debug
+    org.hibernate.SQL: debug
+
+cloud:
+  aws:
+    s3:
+      enabled: false

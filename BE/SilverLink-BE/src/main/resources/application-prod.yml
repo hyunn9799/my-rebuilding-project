@@ -1,0 +1,38 @@
+# ===== Redis Sentinel HA 프로파일 =====
+# 운영(prod) 환경에서 활성화: --spring.profiles.active=prod
+#
+# Redis 단일 장애점(SPOF) 제거를 위한 Sentinel 구성.
+# 3개 Sentinel 노드가 마스터 장애를 감지하면 자동 페일오버합니다.
+#
+# 사용법:
+#   1. docker-compose에 redis-sentinel 3대 추가
+#   2. SPRING_PROFILES_ACTIVE=prod 환경 변수 설정
+#   3. REDIS_SENTINEL_PASSWORD 환경 변수 설정
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  data:
+    redis:
+      sentinel:
+        master: silverlink-master
+        nodes:
+          - ${REDIS_SENTINEL_1:redis-sentinel-1:26379}
+          - ${REDIS_SENTINEL_2:redis-sentinel-2:26379}
+          - ${REDIS_SENTINEL_3:redis-sentinel-3:26379}
+        password: ${REDIS_SENTINEL_PASSWORD:}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      timeout: 3000ms
+      connect-timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 32        # 운영: 2배 확장
+          max-idle: 16
+          min-idle: 4
+          max-wait: 3000ms
+        shutdown-timeout: 200ms
+      # TLS 1.3 (AWS ElastiCache 필수)
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}

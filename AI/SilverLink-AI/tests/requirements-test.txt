@@ -1,0 +1,3 @@
+# Test requirements - install with: pip install -r requirements.txt
+# These are already included in the main requirements.txt
+psutil>=5.9.0  # For memory usage monitoring in performance tests

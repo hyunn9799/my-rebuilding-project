@@ -1,0 +1,150 @@
+"""
+MySQL 기반 약품명 다중 매칭 서비스
+exact → prefix → ngram → fuzzy 순차 실행, score ≥ threshold 시 short-circuit
+"""
+from typing import List, Optional
+from loguru import logger
+from rapidfuzz import fuzz
+
+from app.core.config import configs
+from app.ocr.repository.drug_repository import DrugRepository
+from app.ocr.model.drug_model import DrugInfo, MatchCandidate, MatchResult
+
+
+class MySQLMatcher:
+    """MySQL 기반 4단계 순차 매칭"""
+
+    def __init__(self, drug_repository: DrugRepository, threshold: Optional[float] = None):
+        self.repo = drug_repository
+        self.threshold = threshold or configs.DRUG_MATCH_THRESHOLD
+
+    def match(self, normalized_name: str) -> MatchResult:
+        """
+        4단계 순차 매칭 수행. threshold 이상이면 즉시 반환.
+
+        Args:
+            normalized_name: 정규화된 약품명
+
+        Returns:
+            MatchResult (candidates, best_score, method)
+        """
+        if not normalized_name or len(normalized_name) < 2:
+            return MatchResult()
+
+        # Stage 1: exact match
+        candidates = self._try_exact(normalized_name)
+        if candidates and candidates[0].score >= self.threshold:
+            logger.info(f"MySQL exact 매칭 성공: '{normalized_name}' → score={candidates[0].score}")
+            return MatchResult(
+                candidates=candidates,
+                best_score=candidates[0].score,
+                method="exact",
+            )
+
+        # Stage 2: prefix match
+        prefix_candidates = self._try_prefix(normalized_name)
+        candidates.extend(prefix_candidates)
+        best = self._get_best(candidates)
+        if best and best.score >= self.threshold:
+            logger.info(f"MySQL prefix 매칭 성공: '{normalized_name}' → score={best.score}")
+            return MatchResult(
+                candidates=self._deduplicate(candidates),
+                best_score=best.score,
+                method="prefix",
+            )
+
+        # Stage 3: ngram match
+        ngram_candidates = self._try_ngram(normalized_name)
+        candidates.extend(ngram_candidates)
+        best = self._get_best(candidates)
+        if best and best.score >= self.threshold:
+            logger.info(f"MySQL ngram 매칭 성공: '{normalized_name}' → score={best.score}")
+            return MatchResult(
+                candidates=self._deduplicate(candidates),
+                best_score=best.score,
+                method="ngram",
+            )
+
+        # Stage 4: fuzzy match (Levenshtein)
+        fuzzy_candidates = self._try_fuzzy(normalized_name)
+        candidates.extend(fuzzy_candidates)
+        best = self._get_best(candidates)
+
+        final_method = "fuzzy" if fuzzy_candidates else "none"
+        if best:
+            logger.info(
+                f"MySQL 매칭 완료: '{normalized_name}' → "
+                f"best_score={best.score}, method={final_method}"
+            )
+
+        return MatchResult(
+            candidates=self._deduplicate(candidates),
+            best_score=best.score if best else 0.0,
+            method=final_method,
+        )
+
+    def _try_exact(self, name: str) -> List[MatchCandidate]:
+        """exact match"""
+        results = self.repo.exact_match(name)
+        return [
+            MatchCandidate(drug_info=drug, score=score, method="exact")
+            for drug, score in results
+        ]
+
+    def _try_prefix(self, name: str) -> List[MatchCandidate]:
+        """prefix match"""
+        results = self.repo.prefix_match(name)
+        return [
+            MatchCandidate(drug_info=drug, score=score, method="prefix")
+            for drug, score in results
+        ]
+
+    def _try_ngram(self, name: str) -> List[MatchCandidate]:
+        """ngram fulltext match"""
+        results = self.repo.ngram_match(name)
+        return [
+            MatchCandidate(drug_info=drug, score=score, method="ngram")
+            for drug, score in results
+        ]
+
+    def _try_fuzzy(self, name: str) -> List[MatchCandidate]:
+        """fuzzy match using rapidfuzz Levenshtein"""
+        all_drugs = self.repo.fetch_all_for_fuzzy()
+        if not all_drugs:
+            return []
+
+        candidates = []
+        for drug in all_drugs:
+            target = drug.item_name_normalized or drug.item_name
+            # rapidfuzz ratio (0~100) → 0.0~1.0
+            ratio = fuzz.ratio(name, target) / 100.0
+            # partial_ratio도 고려 (부분 문자열 매칭)
+            partial = fuzz.partial_ratio(name, target) / 100.0
+            # 가중 평균
+            score = (ratio * 0.6 + partial * 0.4)
+
+            if score >= 0.5:  # 최소 임계값
+                candidates.append(
+                    MatchCandidate(drug_info=drug, score=round(score, 3), method="fuzzy")
+                )
+
+        # 상위 5개만
+        candidates.sort(key=lambda c: c.score, reverse=True)
+        return candidates[:5]
+
+    def _get_best(self, candidates: List[MatchCandidate]) -> Optional[MatchCandidate]:
+        """최고 점수 후보 반환"""
+        if not candidates:
+            return None
+        return max(candidates, key=lambda c: c.score)
+
+    def _deduplicate(self, candidates: List[MatchCandidate]) -> List[MatchCandidate]:
+        """item_seq 기준 중복 제거 (최고 점수 유지)"""
+        best_by_seq = {}
+        for c in candidates:
+            seq = c.drug_info.item_seq
+            if seq not in best_by_seq or c.score > best_by_seq[seq].score:
+                best_by_seq[seq] = c
+        result = list(best_by_seq.values())
+        result.sort(key=lambda c: c.score, reverse=True)
+        return result

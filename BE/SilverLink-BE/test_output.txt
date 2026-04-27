@@ -1,0 +1,72 @@
+﻿> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava UP-TO-DATE
+> Task :processTestResources UP-TO-DATE
+> Task :testClasses UP-TO-DATE
+
+> Task :test
+
+AdminControllerTest > 愿由ъ옄 ??젣 API > ?깃났: 愿由ъ옄 ??젣 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:195
+        Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException at DefaultListableBeanFactory.java:1264
+
+AdminControllerTest > 愿由ъ옄 ??젣 API > ?ㅽ뙣: 議댁옱?섏? ?딅뒗 愿由ъ옄 ??젣 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 ?섏젙 API > ?깃났: 援ъ뿭 蹂寃????덈꺼 ?먮룞 ?ш퀎??FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 ?섏젙 API > ?ㅽ뙣: 議댁옱?섏? ?딅뒗 愿由ъ옄 ?섏젙 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 ?섏젙 API > ?깃났: ?대떦 援ъ뿭 蹂寃?FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 沅뚰븳 ?뺤씤 API > ?깃났: 愿??援ъ뿭 ??- false 諛섑솚 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 沅뚰븳 ?뺤씤 API > ?깃났: 愿??援ъ뿭 ??- true 諛섑솚 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 ?앹꽦 API > ?ㅽ뙣: 議댁옱?섏? ?딅뒗 ?ъ슜??FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 ?앹꽦 API > ?깃났: 愿由ъ옄 ?앹꽦 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 ?앹꽦 API > ?깃났: adminLevel 誘몄??????먮룞 寃곗젙 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 ?앹꽦 API > ?ㅽ뙣: ?대? 愿由ъ옄濡??깅줉???ъ슜??FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > ?낅젰媛?寃利?> ?ㅽ뙣: userId媛 null??寃쎌슦 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > ?낅젰媛?寃利?> ?ㅽ뙣: admCode媛 null??寃쎌슦 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 議고쉶 API > ?깃났: 愿由ъ옄 ?④굔 議고쉶 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 議고쉶 API > ?ㅽ뙣: 議댁옱?섏? ?딅뒗 愿由ъ옄 議고쉶 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 紐⑸줉 議고쉶 API > ?깃났: ?됱젙??肄붾뱶濡??꾪꽣留?FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 紐⑸줉 議고쉶 API > ?깃났: ?꾩껜 愿由ъ옄 紐⑸줉 議고쉶 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > 愿由ъ옄 紐⑸줉 議고쉶 API > ?깃났: 愿由ъ옄 ?덈꺼濡??꾪꽣留?FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > ?섏쐞 愿由ъ옄 議고쉶 API > ?ㅽ뙣: 議댁옱?섏? ?딅뒗 愿由ъ옄???섏쐞 議고쉶 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+AdminControllerTest > ?섏쐞 愿由ъ옄 議고쉶 API > ?깃났: ?섏쐞 愿由ъ옄 紐⑸줉 議고쉶 FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+> Task :test FAILED
+5 actionable tasks: 1 executed, 4 up-to-date

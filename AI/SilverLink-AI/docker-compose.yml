@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # FastAPI 서버
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: silverlink-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=prod
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LUXIA_API_KEY=${LUXIA_API_KEY}
+      - TWILIO_SID=${TWILIO_SID}
+      - TWILIO_TOKEN=${TWILIO_TOKEN}
+      - SILVERLINK_NUMBER=${SILVERLINK_NUMBER}
+      - CALL_CONTROLL_URL=${CALL_CONTROLL_URL}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL}
+      - SQS_DLQ_URL=${SQS_DLQ_URL}
+      - MILVUS_URI=${MILVUS_URI}
+      - MILVUS_TOKEN=${MILVUS_TOKEN}
+    volumes:
+      - ./logs:/code/logs
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    networks:
+      - silverlink-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # SQS Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: silverlink-worker
+    environment:
+      - ENV=prod
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LUXIA_API_KEY=${LUXIA_API_KEY}
+      - TWILIO_SID=${TWILIO_SID}
+      - TWILIO_TOKEN=${TWILIO_TOKEN}
+      - SILVERLINK_NUMBER=${SILVERLINK_NUMBER}
+      - CALL_CONTROLL_URL=${CALL_CONTROLL_URL}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL}
+      - SQS_DLQ_URL=${SQS_DLQ_URL}
+      - MILVUS_URI=${MILVUS_URI}
+      - MILVUS_TOKEN=${MILVUS_TOKEN}
+    volumes:
+      - ./logs:/code/logs
+    command: python worker_main.py
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - silverlink-network
+
+networks:
+  silverlink-network:
+    driver: bridge
+
+volumes:
+  logs:

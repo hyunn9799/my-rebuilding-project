@@ -1,0 +1,69 @@
+name: Backend CI
+
+on:
+  push:
+    branches: ["develop", "main"]
+  pull_request:
+    branches: ["develop", "main"]
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write      # Reviewdog가 체크 리포트를 작성하기 위해 필요
+      pull-requests: write # PR에 코멘트를 달기 위해 필요
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # (선택) 빠르게 실패 원인 확인용
+      - name: Gradle info
+        run: ./gradlew -v
+#
+#      # [수정됨] reviewdog/action-checkstyle (존재하지 않음) -> nikitasavinov/checkstyle-action (사용 가능)
+#      - name: Run Checkstyle with Reviewdog
+#        uses: nikitasavinov/checkstyle-action@v0.6.0
+#        with:
+#          github_token: ${{ secrets.GITHUB_TOKEN }}
+#          reporter: github-pr-review # PR에 직접 코멘트 (첨삭)
+#          level: warning # 경고 수준부터 코멘트
+#          filter_mode: added # 변경된 코드에 대해서만 검사
+#          fail_on_error: false # 스타일 오류가 있어도 빌드는 계속 진행
+#          # 중요: 프로젝트 내 checkstyle.xml 파일 경로가 다르다면 아래 주석을 풀고 경로를 맞춰주세요.
+#          # checkstyle_config: config/checkstyle/checkstyle.xml
+
+      - name: Test (unit only)
+        env:
+          SPRING_PROFILES_ACTIVE: ci
+          SPRING_JPA_SHOW_SQL: false
+          # 2. Hibernate 로깅 레벨을 INFO로 올려서 DEBUG 로그 숨기기
+          LOGGING_LEVEL_ORG_HIBERNATE_SQL: info
+          LOGGING_LEVEL_ORG_HIBERNATE_TYPE_DESCRIPTOR_SQL_BASICBINDER: info
+          # 3. (혹시 켜져있다면) SQL 포맷팅 끄기 (줄바꿈 방지)
+          SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
+          # (안전용) 더미 env 주입
+          JWT_SECRET: ci_dummy_jwt_secret_please_change
+          API_SERVICE_KEY: ci_dummy_api_key
+          SOLAPI_API_KEY: ci_dummy_solapi_key
+          SOLAPI_API_SECRET: ci_dummy_solapi_secret
+          SOLAPI_SENDER_NUMBER: "01000000000"
+        run: ./gradlew test --no-daemon --stacktrace -Dspring.profiles.active=ci
+
+      - name: Build
+        run: ./gradlew build -x test --no-daemon

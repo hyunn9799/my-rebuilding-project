@@ -1,0 +1,182 @@
+server:
+  port: 8080
+
+spring:
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  config:
+    import: optional:file:.env[.properties]
+
+#  datasource:
+#    driver-class-name: com.mysql.cj.jdbc.Driver
+#    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:silverlink}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true
+#    username: ${DB_USER:root}
+#    password: ${DB_PASSWORD:password}
+#    hikari:
+#      maximum-pool-size: 10
+#      minimum-idle: 2
+#      connection-timeout: 20000
+#      idle-timeout: 180000
+#      max-lifetime: 300000   # 5분
+#      leak-detection-threshold: 2000
+datasource:
+  url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:silverlink_db}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true
+  username: ${DB_USER:root}
+  password: ${DB_PASSWORD:admin1234}
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      timeout: 3000ms
+      connect-timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 3000ms
+        shutdown-timeout: 200ms
+      repositories:
+        enabled: false
+
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+    open-in-view: false
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        physical_naming_strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+        dialect: org.hibernate.dialect.MySQLDialect
+
+# 인증/보안 설정 (spring 네임스페이스 밖으로 이동)
+security:
+  auth:
+    access-ttl-seconds: ${AUTH_ACCESS_TTL:900}
+    refresh-ttl-seconds: ${AUTH_REFRESH_TTL:1209600}
+    idle-ttl-seconds: ${AUTH_IDLE_TTL:3600}
+    concurrent-policy: KICK_OLD
+    refresh-cookie-name: REFRESH_TOKEN
+    refresh-cookie-path: /api/auth
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE_TRUE:false}
+    refresh-cookie-same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
+    webauthn:
+      rp:
+        id: ${WEBAUTHN_RP_ID:localhost}
+        name: "SilverLink"
+        origin: ${WEBAUTHN_RP_ORIGIN:http://localhost:5173}
+      origins:
+        - ${WEBAUTHN_ORIGIN_1:http://localhost:5173}
+        - ${WEBAUTHN_ORIGIN_2:https://d1y2piyw58z1m3.cloudfront.net}
+  jwt:
+    secret: ${JWT_SECRET}
+
+# 공공데이터 API 설정 (변경 없음).
+api:
+  welfare:
+    service-key: ${API_SERVICE_KEY}
+    central-url: https://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfarelistV001
+    local-url: https://apis.data.go.kr/B554287/LocalGovernmentWelfareInformations/LcgvWelfarelist
+    # [추가] 상세 조회 URL (문서 보고 정확히 적었습니다)
+    central-detail-url: https://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfaredetailedV001
+    local-detail-url: https://apis.data.go.kr/B554287/LocalGovernmentWelfareInformations/LcgvWelfaredetailed
+
+logging:
+  level:
+    com.aicc.silverlink: info
+    org.hibernate.SQL: debug
+    net.ttddyy.dsproxy: error  # datasource-proxy 쿼리 로그 비활성화
+    io.github.resilience4j: info  # Circuit Breaker 상태 변경 로그
+
+# ===== Spring Actuator =====
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info,circuitbreakers
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: true
+    circuitbreakers:
+      enabled: true
+
+# ===== Resilience4j Circuit Breaker =====
+resilience4j:
+  circuitbreaker:
+    instances:
+      redisCircuitBreaker:
+        register-health-indicator: true
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        sliding-window-type: COUNT_BASED
+
+twilio:
+  account-sid: ${TWILIO_ACCOUNT_SID}
+  auth-token: ${TWILIO_AUTH_TOKEN}
+  verify-service-sid: ${TWILIO_VERIFY_SERVICE_SID}
+  messaging-service-sid: ${TWILIO_MESSAGING_SERVICE_SID}
+  sms-enabled: true
+
+luxia:
+  base-url: "https://bridge.luxiacloud.com"
+  api-key: ${LUXIA_API_KEY}
+  document-ai:
+    path: "/luxia/v1/document-ai"
+    model: "luxia-document-ai"
+  timeout:
+    connect-ms: 10000
+    response-ms: 60000
+
+chatbot:
+  python:
+    url: ${CHATBOT_PYTHON_URL:http://localhost:5000}
+  secret:
+    header: "X-SilverLink-Secret"
+    key: ${CHATBOT_SECRET_KEY:X-SilverLink-Key!}
+
+callbot:
+  api:
+    url: ${CALLBOT_API_URL:http://localhost:5000}
+    connect-timeout: 5000
+    read-timeout: 10000
+
+
+
+
+
+cloud:
+  aws:
+    credentials:
+      access-key: ${AWS_ACCESS_KEY_ID}      # 환경변수로 관리
+      secret-key: ${AWS_SECRET_ACCESS_KEY}  # 코드에 직접 안 씀
+    region:
+      static: ap-northeast-2
+    s3:
+      bucket: silverlink-storage
+      enabled: true
+
+#cloud:
+#  aws:
+#    credentials:
+#      access-key: ${AWS_ACCESS_KEY_ID}      # 환경변수나 값을 직접 입력
+#      secret-key: ${AWS_SECRET_ACCESS_KEY}
+#    region:
+#      static: ap-northeast-2
+#    s3:
+#      bucket: silverlink-storage

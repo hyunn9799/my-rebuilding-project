@@ -1,0 +1,118 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.0.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.silverlink'
+version = '0.0.1-SNAPSHOT'
+description = 'SilverLink'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    compileOnly 'org.projectlombok:lombok'
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+    runtimeOnly 'com.h2database:h2'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
+    implementation 'io.github.cdimascio:dotenv-java:3.0.0'
+    implementation 'org.modelmapper:modelmapper:3.1.1'
+    implementation 'org.springframework.boot:spring-boot-starter-aop:3.5.6'
+    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // OTP 해시(Bcrypt)
+    implementation 'org.springframework.security:spring-security-crypto'
+    // Passkey(WebAuthn)
+    implementation 'com.yubico:webauthn-server-core:2.8.0'
+    implementation 'com.twilio.sdk:twilio:11.3.2'
+    testRuntimeOnly 'com.h2database:h2'
+    // Mockito agent를 위한 의존성 추가
+    testRuntimeOnly 'org.mockito:mockito-core'
+    testImplementation 'com.h2database:h2'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.springframework.boot:spring-boot-starter-reactor-netty'
+    // AWS S3 SDK
+    implementation platform('software.amazon.awssdk:bom:2.25.70')
+    implementation 'software.amazon.awssdk:s3'
+    implementation 'net.ttddyy:datasource-proxy:1.10'
+
+    // ===== Redis 고도화 의존성 =====
+    // Resilience4j: Circuit Breaker, Rate Limiter 등 장애 복원력 패턴
+    implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
+    // Micrometer: Redis 및 Circuit Breaker 메트릭 수집
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // Testcontainers: Redis 통합 테스트용
+    testImplementation 'org.testcontainers:testcontainers:1.20.4'
+    testImplementation 'org.testcontainers:junit-jupiter:1.20.4'
+
+}
+
+
+
+tasks.named('test') {
+    useJUnitPlatform()
+    jvmArgs "-Xshare:off"
+
+    if (System.getProperty('spring.profiles.active')) {
+        systemProperty 'spring.profiles.active', System.getProperty('spring.profiles.active')
+    }
+
+    // ✅ PR CI에서는 통합테스트(*IT) 제외
+    exclude '**/*IT.class'
+
+    // Mockito를 Java agent로 설정하여 동적 로딩 경고 제거 (네가 하던 것 유지)
+    doFirst {
+        def mockitoAgent = configurations.testRuntimeClasspath.find {
+            it.name.contains('mockito-core')
+        }
+        if (mockitoAgent) {
+            jvmArgs "-javaagent:${mockitoAgent.absolutePath}"
+        }
+    }
+}
+
+// ✅ 통합테스트 전용 태스크(원할 때만 실행)
+tasks.register('integrationTest', Test) {
+    useJUnitPlatform()
+    jvmArgs "-Xshare:off"
+    include '**/*IT.class'
+    shouldRunAfter tasks.test
+
+    doFirst {
+        def mockitoAgent = configurations.testRuntimeClasspath.find {
+            it.name.contains('mockito-core')
+        }
+        if (mockitoAgent) {
+            jvmArgs "-javaagent:${mockitoAgent.absolutePath}"
+        }
+    }
+}
