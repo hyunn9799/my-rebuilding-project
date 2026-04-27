@@ -145,7 +145,7 @@ luxia:
 
 chatbot:
   python:
-    url: ${CHATBOT_PYTHON_URL:http://localhost:5000}
+    url: ${CHATBOT_PYTHON_URL:http://localhost:8000}
   secret:
     header: "X-SilverLink-Secret"
     key: ${CHATBOT_SECRET_KEY:X-SilverLink-Key!}

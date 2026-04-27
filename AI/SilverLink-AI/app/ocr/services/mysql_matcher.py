@@ -1,6 +1,6 @@
 """
 MySQL 기반 약품명 다중 매칭 서비스
-exact → prefix → ngram → fuzzy 순차 실행, score ≥ threshold 시 short-circuit
+exact → alias → error_alias → prefix → ngram → fuzzy 순차 실행
 """
 from typing import List, Optional
 from loguru import logger
@@ -12,7 +12,7 @@ from app.ocr.model.drug_model import DrugInfo, MatchCandidate, MatchResult
 
 
 class MySQLMatcher:
-    """MySQL 기반 4단계 순차 매칭"""
+    """MySQL 기반 순차 매칭"""
 
     def __init__(self, drug_repository: DrugRepository, threshold: Optional[float] = None):
         self.repo = drug_repository
@@ -20,7 +20,7 @@ class MySQLMatcher:
 
     def match(self, normalized_name: str) -> MatchResult:
         """
-        4단계 순차 매칭 수행. threshold 이상이면 즉시 반환.
+        순차 매칭 수행. threshold 이상이면 즉시 반환.
 
         Args:
             normalized_name: 정규화된 약품명
@@ -41,7 +41,31 @@ class MySQLMatcher:
                 method="exact",
             )
 
-        # Stage 2: prefix match
+        # Stage 2: alias match
+        alias_candidates = self._try_alias(normalized_name)
+        candidates.extend(alias_candidates)
+        best = self._get_best(candidates)
+        if best and best.score >= self.threshold:
+            logger.info(f"MySQL alias 매칭 성공: '{normalized_name}' → score={best.score}")
+            return MatchResult(
+                candidates=self._deduplicate(candidates),
+                best_score=best.score,
+                method="alias",
+            )
+
+        # Stage 3: OCR error alias match
+        error_alias_candidates = self._try_error_alias(normalized_name)
+        candidates.extend(error_alias_candidates)
+        best = self._get_best(candidates)
+        if best and best.score >= self.threshold:
+            logger.info(f"MySQL error_alias 매칭 성공: '{normalized_name}' → score={best.score}")
+            return MatchResult(
+                candidates=self._deduplicate(candidates),
+                best_score=best.score,
+                method="error_alias",
+            )
+
+        # Stage 4: prefix match
         prefix_candidates = self._try_prefix(normalized_name)
         candidates.extend(prefix_candidates)
         best = self._get_best(candidates)
@@ -53,7 +77,7 @@ class MySQLMatcher:
                 method="prefix",
             )
 
-        # Stage 3: ngram match
+        # Stage 5: ngram match
         ngram_candidates = self._try_ngram(normalized_name)
         candidates.extend(ngram_candidates)
         best = self._get_best(candidates)
@@ -65,7 +89,7 @@ class MySQLMatcher:
                 method="ngram",
             )
 
-        # Stage 4: fuzzy match (Levenshtein)
+        # Stage 6: fuzzy match (Levenshtein)
         fuzzy_candidates = self._try_fuzzy(normalized_name)
         candidates.extend(fuzzy_candidates)
         best = self._get_best(candidates)
@@ -87,15 +111,59 @@ class MySQLMatcher:
         """exact match"""
         results = self.repo.exact_match(name)
         return [
-            MatchCandidate(drug_info=drug, score=score, method="exact")
+            MatchCandidate(
+                drug_info=drug,
+                score=score,
+                method="exact",
+                evidence={"name_match": score, "source": "mysql_exact"},
+            )
             for drug, score in results
+        ]
+
+    def _try_alias(self, name: str) -> List[MatchCandidate]:
+        """alias table exact match"""
+        results = self.repo.alias_match(name)
+        return [
+            MatchCandidate(
+                drug_info=drug,
+                score=score,
+                method="alias",
+                evidence={
+                    "name_match": score,
+                    "source": "mysql_alias",
+                    **evidence,
+                },
+            )
+            for drug, score, evidence in results
+        ]
+
+    def _try_error_alias(self, name: str) -> List[MatchCandidate]:
+        """OCR error alias table exact match"""
+        results = self.repo.error_alias_match(name)
+        return [
+            MatchCandidate(
+                drug_info=drug,
+                score=score,
+                method="error_alias",
+                evidence={
+                    "name_match": score,
+                    "source": "mysql_error_alias",
+                    **evidence,
+                },
+            )
+            for drug, score, evidence in results
         ]
 
     def _try_prefix(self, name: str) -> List[MatchCandidate]:
         """prefix match"""
         results = self.repo.prefix_match(name)
         return [
-            MatchCandidate(drug_info=drug, score=score, method="prefix")
+            MatchCandidate(
+                drug_info=drug,
+                score=score,
+                method="prefix",
+                evidence={"name_match": score, "source": "mysql_prefix"},
+            )
             for drug, score in results
         ]
 
@@ -103,7 +171,12 @@ class MySQLMatcher:
         """ngram fulltext match"""
         results = self.repo.ngram_match(name)
         return [
-            MatchCandidate(drug_info=drug, score=score, method="ngram")
+            MatchCandidate(
+                drug_info=drug,
+                score=score,
+                method="ngram",
+                evidence={"name_match": score, "source": "mysql_ngram"},
+            )
             for drug, score in results
         ]
 
@@ -125,7 +198,17 @@ class MySQLMatcher:
 
             if score >= 0.5:  # 최소 임계값
                 candidates.append(
-                    MatchCandidate(drug_info=drug, score=round(score, 3), method="fuzzy")
+                    MatchCandidate(
+                        drug_info=drug,
+                        score=round(score, 3),
+                        method="fuzzy",
+                        evidence={
+                            "name_match": round(score, 3),
+                            "ratio": round(ratio, 3),
+                            "partial_ratio": round(partial, 3),
+                            "source": "mysql_fuzzy",
+                        },
+                    )
                 )
 
         # 상위 5개만

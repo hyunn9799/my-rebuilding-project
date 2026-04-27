@@ -53,6 +53,12 @@ interface MedicationInfo {
   instructions?: string;
   confidence: number;
   category?: string;
+  item_seq?: string;
+  entp_name?: string;
+  match_score?: number;
+  match_method?: string;
+  evidence?: Record<string, unknown>;
+  validation_messages?: string[];
 }
 
 interface ValidationResult {
@@ -62,6 +68,10 @@ interface ValidationResult {
   llm_analysis: string;
   warnings: string[];
   error_message?: string;
+  decision_status?: "MATCHED" | "AMBIGUOUS" | "LOW_CONFIDENCE" | "NOT_FOUND" | "NEED_USER_CONFIRMATION" | string;
+  match_confidence?: number;
+  requires_user_confirmation?: boolean;
+  decision_reasons?: string[];
 }
 
 // 약 카테고리 매핑
@@ -366,6 +376,42 @@ const SeniorOCR = () => {
   // 약 이름을 쉬운 표현으로 변환 (원본 약 이름 반환)
   const getMedicationDisplayName = (med: MedicationInfo): string => {
     return med.medication_name;
+  };
+
+  const getDecisionLabel = (status?: string): string => {
+    switch (status) {
+      case "MATCHED":
+        return "일치";
+      case "AMBIGUOUS":
+        return "후보 여러 개";
+      case "LOW_CONFIDENCE":
+        return "낮은 신뢰도";
+      case "NEED_USER_CONFIRMATION":
+        return "확인 필요";
+      case "NOT_FOUND":
+        return "찾지 못함";
+      default:
+        return status || "판정 대기";
+    }
+  };
+
+  const getDecisionBadgeClass = (status?: string): string => {
+    switch (status) {
+      case "MATCHED":
+        return "bg-green-100 text-green-700 border-green-200";
+      case "AMBIGUOUS":
+      case "NEED_USER_CONFIRMATION":
+        return "bg-amber-100 text-amber-700 border-amber-200";
+      case "LOW_CONFIDENCE":
+      case "NOT_FOUND":
+        return "bg-red-100 text-red-700 border-red-200";
+      default:
+        return "bg-gray-100 text-gray-700 border-gray-200";
+    }
+  };
+
+  const needsMedicationReview = (med: MedicationInfo): boolean => {
+    return med.confidence < 0.7 || med.evidence?.strength_match === false;
   };
 
   const handleSpeak = () => {
@@ -678,6 +724,38 @@ const SeniorOCR = () => {
                   )}
 
                   {/* 약 목록 */}
+                  {validationResult && (
+                    <div className="mb-4 rounded-lg border bg-white p-3 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">판정</span>
+                        <Badge
+                          variant="outline"
+                          className={getDecisionBadgeClass(validationResult.decision_status)}
+                        >
+                          {getDecisionLabel(validationResult.decision_status)}
+                        </Badge>
+                        {typeof validationResult.match_confidence === "number" && (
+                          <span className="text-muted-foreground">
+                            신뢰도 {Math.round(validationResult.match_confidence * 100)}%
+                          </span>
+                        )}
+                        {validationResult.requires_user_confirmation && (
+                          <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200">
+                            <AlertCircle className="w-3 h-3 mr-1" />
+                            등록 전 확인
+                          </Badge>
+                        )}
+                      </div>
+                      {validationResult.decision_reasons && validationResult.decision_reasons.length > 0 && (
+                        <ul className="mt-2 space-y-1 text-muted-foreground">
+                          {validationResult.decision_reasons.map((reason, reasonIdx) => (
+                            <li key={reasonIdx}>- {reason}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
                   <div className="space-y-2 mb-4">
                     {extractedMedications.map((med, idx) => (
                       <div
@@ -703,7 +781,7 @@ const SeniorOCR = () => {
                                   </Badge>
                                 );
                               })()}
-                              {med.confidence < 0.7 && (
+                              {needsMedicationReview(med) && (
                                 <Badge variant="outline" className="text-xs">
                                   <AlertCircle className="w-3 h-3 mr-1" />
                                   확인 필요
@@ -719,6 +797,30 @@ const SeniorOCR = () => {
                               <p className="text-sm text-muted-foreground">
                                 복용법: {med.instructions}
                               </p>
+                            )}
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {med.match_method && (
+                                <Badge variant="outline" className="text-xs">
+                                  {med.match_method}
+                                </Badge>
+                              )}
+                              {med.evidence?.strength_match === false && (
+                                <Badge variant="outline" className="text-xs bg-red-100 text-red-700 border-red-200">
+                                  함량 확인
+                                </Badge>
+                              )}
+                              {med.entp_name && (
+                                <Badge variant="outline" className="text-xs">
+                                  {med.entp_name}
+                                </Badge>
+                              )}
+                            </div>
+                            {med.validation_messages && med.validation_messages.length > 0 && (
+                              <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                {med.validation_messages.map((message, messageIdx) => (
+                                  <li key={messageIdx}>- {message}</li>
+                                ))}
+                              </ul>
                             )}
                             <div className="flex flex-wrap gap-1 mt-2">
                               {med.times.map(time => (
@@ -833,7 +935,7 @@ const SeniorOCR = () => {
                       <span className="font-bold text-base">
                         {getMedicationDisplayName(med)}
                       </span>
-                      {med.confidence < 0.7 && (
+                      {needsMedicationReview(med) && (
                         <Badge variant="outline" className="text-xs">
                           <AlertCircle className="w-3 h-3 mr-1" />
                           확인 필요

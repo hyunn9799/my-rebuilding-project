@@ -1,9 +1,15 @@
 from app.chatbot.repository.base_repository import BaseRepository
-from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
 from app.core.config import configs
+from typing import Any
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _milvus():
+    from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+
+    return connections, Collection, FieldSchema, CollectionSchema, DataType, utility
 
 class ChatbotRepository(BaseRepository):
     """Milvus/Zilliz 벡터 DB 서비스"""
@@ -14,6 +20,7 @@ class ChatbotRepository(BaseRepository):
         self.inquiry_collection = self._get_or_create_inquiry_collection()
 
     def _connect(self):
+        connections, _, _, _, _, _ = _milvus()
         try:
             connections.connect(
                 alias="default",
@@ -25,7 +32,8 @@ class ChatbotRepository(BaseRepository):
             logger.error(f"Failed to connect to Milvus: {e}")
             raise
 
-    def _get_or_create_faq_collection(self) -> Collection:
+    def _get_or_create_faq_collection(self) -> Any:
+        _, Collection, FieldSchema, CollectionSchema, DataType, utility = _milvus()
         name = configs.FAQ_COLLECTION_NAME
         if utility.has_collection(name):
             return Collection(name)
@@ -48,7 +56,8 @@ class ChatbotRepository(BaseRepository):
         collection.create_index(field_name="embedding", index_params=index_params)
         return collection
 
-    def _get_or_create_inquiry_collection(self) -> Collection:
+    def _get_or_create_inquiry_collection(self) -> Any:
+        _, Collection, FieldSchema, CollectionSchema, DataType, utility = _milvus()
         name = configs.INQUIRY_COLLECTION_NAME
         if utility.has_collection(name):
             return Collection(name)

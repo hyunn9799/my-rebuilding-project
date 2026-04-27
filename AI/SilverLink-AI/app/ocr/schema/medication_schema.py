@@ -3,10 +3,21 @@ from typing import List, Optional
 from datetime import date
 
 
+class OCRTokenInfo(BaseModel):
+    """OCR 토큰별 신뢰도 정보"""
+    value: str = Field(..., description="OCR 토큰 원문")
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="OCR 신뢰도")
+
+
 class MedicationOCRRequest(BaseModel):
     """OCR 원본 텍스트 요청"""
     ocr_text: str = Field(..., description="Luxia OCR에서 추출된 원본 텍스트", alias="ocrText")
     elderly_user_id: Optional[int] = Field(None, description="어르신 사용자 ID", alias="elderlyUserId")
+    ocr_tokens: List[OCRTokenInfo] = Field(
+        default_factory=list,
+        description="OCR 토큰별 confidence 정보",
+        alias="ocrTokens",
+    )
     
     class Config:
         populate_by_name = True  # 원래 이름과 alias 모두 허용
@@ -28,6 +39,8 @@ class MedicationInfo(BaseModel):
     purpose: Optional[str] = Field(None, description="이 약의 용도 (쉬운 설명)")
     caution: Optional[str] = Field(None, description="주의사항 (쉬운 설명)")
     simple_name: Optional[str] = Field(None, description="쉬운 약 이름")
+    evidence: dict = Field(default_factory=dict, description="매칭 및 검증 근거")
+    validation_messages: List[str] = Field(default_factory=list, description="규칙 검증 메시지")
 
 
 class PipelineStageInfo(BaseModel):
@@ -48,6 +61,10 @@ class MedicationOCRResponse(BaseModel):
     # 신규 필드 (파이프라인)
     pipeline_stages: List[PipelineStageInfo] = Field(default_factory=list, description="파이프라인 단계별 정보")
     total_duration_ms: Optional[float] = Field(None, description="전체 처리 시간(ms)")
+    decision_status: str = Field("NOT_FOUND", description="최종 판정 상태")
+    match_confidence: float = Field(0.0, description="최종 매칭 신뢰도")
+    requires_user_confirmation: bool = Field(False, description="사용자 확인 필요 여부")
+    decision_reasons: List[str] = Field(default_factory=list, description="최종 판정 사유")
 
 
 class MedicationScheduleRequest(BaseModel):

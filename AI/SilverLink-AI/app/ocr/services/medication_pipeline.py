@@ -3,22 +3,27 @@ OCR 약 식별 파이프라인 오케스트레이터
 6단계: OCR → 정규화 → MySQL 1차 → VectorDB 2차 → 규칙 검증 → LLM 설명
 """
 import time
-from typing import Optional, Dict, Any, List
+from typing import Any, List, Optional, Tuple
 from loguru import logger
 
 from app.core.config import configs
 from app.ocr.model.drug_model import (
-    PipelineResult, PipelineStage, MatchCandidate, NormalizedDrug
+    DecisionStatus,
+    MatchCandidate,
+    NormalizedDrug,
+    OCRToken,
+    PipelineResult,
+    PipelineStage,
 )
-from app.ocr.services.text_normalizer import TextNormalizer
-from app.ocr.services.mysql_matcher import MySQLMatcher
-from app.ocr.services.vector_matcher import VectorMatcher
-from app.ocr.services.rule_validator import RuleValidator
 from app.ocr.services.llm_descriptor import LLMDescriptor
+from app.ocr.services.mysql_matcher import MySQLMatcher
+from app.ocr.services.rule_validator import RuleValidator
+from app.ocr.services.text_normalizer import TextNormalizer
 
 
 class MedicationPipeline:
     """
+
     OCR 약 식별 파이프라인 오케스트레이터
 
     파이프라인 흐름:
@@ -30,11 +35,14 @@ class MedicationPipeline:
     ⑥ LLM 설명 생성
     """
 
+    LOW_OCR_CONFIDENCE_THRESHOLD = 0.75
+    AMBIGUOUS_TOP_GAP = 0.08
+
     def __init__(
         self,
         text_normalizer: TextNormalizer,
         mysql_matcher: MySQLMatcher,
-        vector_matcher: VectorMatcher,
+        vector_matcher: Any,
         rule_validator: RuleValidator,
         llm_descriptor: LLMDescriptor,
         match_threshold: Optional[float] = None,
@@ -46,7 +54,12 @@ class MedicationPipeline:
         self.llm_descriptor = llm_descriptor
         self.threshold = match_threshold or configs.DRUG_MATCH_THRESHOLD
 
-    async def process(self, ocr_text: str, elderly_user_id: Optional[int] = None) -> PipelineResult:
+    async def process(
+        self,
+        ocr_text: str,
+        elderly_user_id: Optional[int] = None,
+        ocr_tokens: Optional[List[OCRToken]] = None,
+    ) -> PipelineResult:
         """
         전체 파이프라인 실행
 
@@ -69,7 +82,7 @@ class MedicationPipeline:
             # Stage 2: 정규화
             # ──────────────────────────────────
             t0 = time.perf_counter()
-            normalized_drugs = self.normalizer.normalize(ocr_text)
+            normalized_drugs = self.normalizer.normalize(ocr_text, ocr_tokens=ocr_tokens)
             stage_ms = (time.perf_counter() - t0) * 1000
 
             stages.append(PipelineStage(
@@ -86,6 +99,8 @@ class MedicationPipeline:
                     pipeline_stages=stages,
                     total_duration_ms=round((time.perf_counter() - pipeline_start) * 1000, 2),
                     warnings=["OCR 텍스트에서 약품명을 추출할 수 없습니다."],
+                    decision_status="NOT_FOUND",
+                    decision_reasons=["정규화 단계에서 약품명 후보가 추출되지 않았습니다."],
                 )
 
             # ──────────────────────────────────
@@ -165,11 +180,32 @@ class MedicationPipeline:
             ))
 
             # ──────────────────────────────────
-            # Stage 6: LLM 설명 생성
+            # Stage 6: 최종 판정
             # ──────────────────────────────────
             t0 = time.perf_counter()
+            decision_status, match_confidence, requires_confirmation, decision_reasons = (
+                self._decide(final_candidates, normalized_drugs)
+            )
+            stage_ms = (time.perf_counter() - t0) * 1000
+
+            stages.append(PipelineStage(
+                stage="decision",
+                duration_ms=round(stage_ms, 2),
+                result_summary=(
+                    f"status={decision_status}, confidence={match_confidence:.3f}, "
+                    f"requires_confirmation={requires_confirmation}"
+                ),
+            ))
+
+            # ──────────────────────────────────
+            # Stage 7: LLM 설명 생성
+            # ──────────────────────────────────
+            t0 = time.perf_counter()
+            llm_candidates = final_candidates if decision_status == "MATCHED" else final_candidates[:3]
             llm_result = await self.llm_descriptor.generate_description(
-                final_candidates, ocr_text
+                llm_candidates,
+                ocr_text,
+                decision_status=decision_status,
             )
             stage_ms = (time.perf_counter() - t0) * 1000
 
@@ -190,7 +226,7 @@ class MedicationPipeline:
             )
 
             return PipelineResult(
-                success=len(final_candidates) > 0,
+                success=decision_status in ("MATCHED", "AMBIGUOUS", "NEED_USER_CONFIRMATION"),
                 identified_drugs=final_candidates,
                 raw_ocr_text=ocr_text,
                 normalized_names=normalized_drugs,
@@ -198,6 +234,10 @@ class MedicationPipeline:
                 warnings=llm_result.get("warnings", []),
                 pipeline_stages=stages,
                 total_duration_ms=round(total_ms, 2),
+                decision_status=decision_status,
+                match_confidence=match_confidence,
+                requires_user_confirmation=requires_confirmation,
+                decision_reasons=decision_reasons,
             )
 
         except Exception as e:
@@ -212,6 +252,8 @@ class MedicationPipeline:
                 total_duration_ms=round(total_ms, 2),
                 error_message=str(e),
                 warnings=["파이프라인 처리 중 오류가 발생했습니다."],
+                decision_status="NOT_FOUND",
+                decision_reasons=[str(e)],
             )
 
     def _deduplicate(self, candidates: List[MatchCandidate]) -> List[MatchCandidate]:
@@ -224,3 +266,42 @@ class MedicationPipeline:
         result = list(best_by_seq.values())
         result.sort(key=lambda c: c.score, reverse=True)
         return result
+
+    def _decide(
+        self,
+        candidates: List[MatchCandidate],
+        normalized_drugs: List[NormalizedDrug],
+    ) -> Tuple[DecisionStatus, float, bool, List[str]]:
+        """후보 점수와 규칙 검증 결과로 최종 상태를 판정."""
+        if not candidates:
+            return "NOT_FOUND", 0.0, False, ["유효한 약품 후보가 없습니다."]
+
+        top = candidates[0]
+        second = candidates[1] if len(candidates) > 1 else None
+        reasons: List[str] = [f"최고 후보: {top.drug_info.item_name} ({top.score:.3f})"]
+
+        low_ocr = [
+            nd.ocr_confidence
+            for nd in normalized_drugs
+            if nd.ocr_confidence is not None and nd.ocr_confidence < self.LOW_OCR_CONFIDENCE_THRESHOLD
+        ]
+        if low_ocr:
+            reasons.append(f"OCR 신뢰도 낮음: min={min(low_ocr):.3f}")
+            return "LOW_CONFIDENCE", top.score, True, reasons
+
+        if top.evidence.get("strength_match") is False:
+            reasons.append("함량이 다른 후보일 가능성이 있습니다.")
+            return "NEED_USER_CONFIRMATION", top.score, True, reasons
+
+        if second and (top.score - second.score) < self.AMBIGUOUS_TOP_GAP:
+            reasons.append(
+                f"상위 후보 점수 차이가 작습니다: 2순위={second.drug_info.item_name} ({second.score:.3f})"
+            )
+            return "AMBIGUOUS", top.score, True, reasons
+
+        if top.score < self.threshold:
+            reasons.append(f"최고 점수가 threshold({self.threshold:.2f})보다 낮습니다.")
+            return "LOW_CONFIDENCE", top.score, True, reasons
+
+        reasons.append("점수와 규칙 검증 기준을 통과했습니다.")
+        return "MATCHED", top.score, False, reasons

@@ -11,6 +11,7 @@ from app.ocr.schema.medication_schema import (
     MedicationInfo,
     PipelineStageInfo,
 )
+from app.ocr.model.drug_model import OCRToken
 
 
 router = APIRouter(
@@ -66,6 +67,10 @@ async def validate_medication_ocr(
         result = await pipeline.process(
             ocr_text=request.ocr_text,
             elderly_user_id=request.elderly_user_id,
+            ocr_tokens=[
+                OCRToken(value=token.value, confidence=token.confidence)
+                for token in request.ocr_tokens
+            ],
         )
 
         # PipelineResult → MedicationOCRResponse 변환
@@ -85,6 +90,8 @@ async def validate_medication_ocr(
                 match_method=candidate.method,
                 purpose=drug.efcy_qesitm[:200] if drug.efcy_qesitm else None,
                 caution=drug.atpn_qesitm[:200] if drug.atpn_qesitm else None,
+                evidence=candidate.evidence,
+                validation_messages=candidate.validation_messages,
             ))
 
         pipeline_stages = [
@@ -105,6 +112,10 @@ async def validate_medication_ocr(
             error_message=result.error_message,
             pipeline_stages=pipeline_stages,
             total_duration_ms=result.total_duration_ms,
+            decision_status=result.decision_status,
+            match_confidence=result.match_confidence,
+            requires_user_confirmation=result.requires_user_confirmation,
+            decision_reasons=result.decision_reasons,
         )
 
         if not response.success and response.error_message:

@@ -1,7 +1,4 @@
-"""
-약품 벡터 검색 레포지토리 (ChromaDB)
-"""
-import chromadb
+"""약품 벡터 검색 레포지토리 (ChromaDB)."""
 from typing import List, Tuple, Optional
 from loguru import logger
 
@@ -13,6 +10,8 @@ class DrugVectorRepository:
     """ChromaDB 기반 약품명 임베딩 벡터 검색"""
 
     def __init__(self, persist_directory: Optional[str] = None, collection_name: Optional[str] = None):
+        import chromadb
+
         self.persist_directory = persist_directory or configs.CHROMA_PERSIST_DIRECTORY
         self.collection_name = collection_name or configs.DRUG_COLLECTION_NAME
 

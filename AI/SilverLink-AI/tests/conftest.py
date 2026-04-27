@@ -2,7 +2,6 @@ import pytest
 import asyncio
 from httpx import AsyncClient
 from fastapi.testclient import TestClient
-from pymilvus import connections
 from typing import Generator, AsyncGenerator
 import sys
 import os
@@ -41,6 +40,8 @@ async def async_test_client() -> AsyncGenerator:
 def milvus_connection():
     """Milvus connection fixture"""
     from app.core.config import configs
+    from pymilvus import connections
+
     try:
         connections.connect(
             alias="default",

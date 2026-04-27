@@ -30,7 +30,7 @@ public class OcrProxyController {
 
     private final RestTemplate restTemplate;
 
-    @Value("${chatbot.python.url:http://localhost:5000}")
+    @Value("${chatbot.python.url:http://localhost:8000}")
     private String pythonAiUrl;
 
     @Value("${chatbot.secret.header:X-SilverLink-Secret}")

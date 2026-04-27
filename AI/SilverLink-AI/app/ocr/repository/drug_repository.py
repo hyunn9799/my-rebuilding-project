@@ -3,7 +3,7 @@
 medications_master 테이블 CRUD + 다중 매칭 검색
 """
 import pymysql
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from app.core.config import configs
@@ -61,6 +61,90 @@ class DrugRepository:
                 return [(self._row_to_drug_info(r), 1.0) for r in rows]
         except Exception as e:
             logger.error(f"exact_match 실패: {e}")
+            return []
+        finally:
+            if connection:
+                connection.close()
+
+    def alias_match(self, name: str) -> List[Tuple[DrugInfo, float, Dict[str, Any]]]:
+        """사용자/운영 alias 정확 일치 검색."""
+        connection = None
+        try:
+            connection = self._get_connection()
+            with connection.cursor() as cursor:
+                sql = """
+                    SELECT m.*, a.alias_name, a.alias_normalized, a.source AS alias_source
+                    FROM medication_aliases a
+                    JOIN medications_master m ON m.item_seq = a.item_seq
+                    WHERE a.is_active = 1
+                      AND (a.alias_name = %s OR a.alias_normalized = %s)
+                    ORDER BY a.updated_at DESC
+                    LIMIT 10
+                """
+                cursor.execute(sql, (name, name))
+                rows = cursor.fetchall()
+                return [
+                    (
+                        self._row_to_drug_info(r),
+                        0.98,
+                        {
+                            "alias_name": r.get("alias_name"),
+                            "alias_normalized": r.get("alias_normalized"),
+                            "alias_source": r.get("alias_source"),
+                        },
+                    )
+                    for r in rows
+                ]
+        except Exception as e:
+            logger.error(f"alias_match 실패: {e}")
+            return []
+        finally:
+            if connection:
+                connection.close()
+
+    def error_alias_match(self, name: str) -> List[Tuple[DrugInfo, float, Dict[str, Any]]]:
+        """OCR 오인식 alias 정확 일치 검색."""
+        connection = None
+        try:
+            connection = self._get_connection()
+            with connection.cursor() as cursor:
+                sql = """
+                    SELECT
+                        m.*,
+                        ea.error_text,
+                        ea.normalized_error_text,
+                        ea.correction_reason,
+                        ea.confidence AS error_alias_confidence,
+                        ea.source AS error_alias_source
+                    FROM medication_error_aliases ea
+                    JOIN medications_master m ON m.item_seq = ea.item_seq
+                    WHERE ea.is_active = 1
+                      AND (ea.error_text = %s OR ea.normalized_error_text = %s)
+                    ORDER BY ea.confidence DESC, ea.updated_at DESC
+                    LIMIT 10
+                """
+                cursor.execute(sql, (name, name))
+                rows = cursor.fetchall()
+
+                results = []
+                for r in rows:
+                    confidence = float(r.get("error_alias_confidence") or 0.9)
+                    score = min(max(confidence, 0.5), 1.0) * 0.95
+                    results.append((
+                        self._row_to_drug_info(r),
+                        round(score, 3),
+                        {
+                            "error_text": r.get("error_text"),
+                            "normalized_error_text": r.get("normalized_error_text"),
+                            "correction_reason": r.get("correction_reason"),
+                            "error_alias_confidence": confidence,
+                            "error_alias_source": r.get("error_alias_source"),
+                        },
+                    ))
+
+                return results
+        except Exception as e:
+            logger.error(f"error_alias_match 실패: {e}")
             return []
         finally:
             if connection:
@@ -282,8 +366,51 @@ class DrugRepository:
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
                 cursor.execute(sql)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS medication_aliases (
+                        id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+                        item_seq           VARCHAR(20) NOT NULL COMMENT '품목기준코드',
+                        alias_name         VARCHAR(200) NOT NULL COMMENT '약품 별칭',
+                        alias_normalized   VARCHAR(200) COMMENT '정규화된 약품 별칭',
+                        source             VARCHAR(50) DEFAULT 'manual' COMMENT 'manual/user/system',
+                        is_active          TINYINT(1) NOT NULL DEFAULT 1,
+                        created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at         DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uk_medication_alias (item_seq, alias_name),
+                        INDEX idx_alias_name (alias_name),
+                        INDEX idx_alias_normalized (alias_normalized),
+                        INDEX idx_alias_item_seq (item_seq),
+                        CONSTRAINT fk_medication_alias_item_seq
+                            FOREIGN KEY (item_seq) REFERENCES medications_master(item_seq)
+                            ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS medication_error_aliases (
+                        id                    BIGINT AUTO_INCREMENT PRIMARY KEY,
+                        item_seq              VARCHAR(20) NOT NULL COMMENT '품목기준코드',
+                        error_text            VARCHAR(200) NOT NULL COMMENT 'OCR 오인식 문자열',
+                        normalized_error_text VARCHAR(200) COMMENT '정규화된 OCR 오인식 문자열',
+                        correction_reason     VARCHAR(200) COMMENT '보정 사유',
+                        confidence            DECIMAL(4,3) NOT NULL DEFAULT 0.900,
+                        source                VARCHAR(50) DEFAULT 'manual' COMMENT 'manual/user/system',
+                        is_active             TINYINT(1) NOT NULL DEFAULT 1,
+                        created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uk_medication_error_alias (item_seq, error_text),
+                        INDEX idx_error_text (error_text),
+                        INDEX idx_normalized_error_text (normalized_error_text),
+                        INDEX idx_error_alias_item_seq (item_seq),
+                        CONSTRAINT fk_medication_error_alias_item_seq
+                            FOREIGN KEY (item_seq) REFERENCES medications_master(item_seq)
+                            ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+
                 connection.commit()
-                logger.info("medications_master 테이블 생성/확인 완료")
+                logger.info("medications_master 및 alias 테이블 생성/확인 완료")
         except Exception as e:
             logger.error(f"테이블 생성 실패: {e}")
             raise

@@ -19,7 +19,7 @@ try:
     from qdrant_client.models import PointStruct
     QDRANT_AVAILABLE = True
 except ImportError:
-    print("⚠️ qdrant_client not found. Qdrant features will be disabled.")
+    print("qdrant_client not found. Qdrant features will be disabled.")
     QDRANT_AVAILABLE = False
 
 # Disable Mem0 Telemetry to prevent PostHog connection errors
@@ -32,7 +32,7 @@ try:
     from llama_cpp import Llama, LlamaGrammar
     LLAMA_AVAILABLE = True
 except ImportError:
-    print("⚠️ llama-cpp-python not found. Local LLM features will be disabled.")
+    print("llama-cpp-python not found. Local LLM features will be disabled.")
     LLAMA_AVAILABLE = False
 
 # [New] Presidio Imports for PII Filtering
@@ -43,14 +43,14 @@ try:
     from presidio_anonymizer.entities import OperatorConfig
     PRESIDIO_AVAILABLE = True
 except ImportError:
-    print("⚠️ Presidio library not found. PII filtering will be disabled.")
+    print("Presidio library not found. PII filtering will be disabled.")
     PRESIDIO_AVAILABLE = False
 
 try:
     from mem0 import Memory
     MEM0_AVAILABLE = True
 except ImportError:
-    print("⚠️ Mem0 library not found. Memory feature will be disabled.")
+    print("Mem0 library not found. Memory feature will be disabled.")
     MEM0_AVAILABLE = False
 
 from app.callbot.repository.callbot_repository import CallbotRepository
@@ -103,7 +103,7 @@ class OrchestratorEngine:
         return cls._instance
     
     def initialize(self):
-        print("🚀 [OrchestratorEngine] Initializing...")
+        print("[OrchestratorEngine] Initializing...")
         self.presidio_analyzer = None
         self.presidio_anonymizer = None
         self.local_llm = None
@@ -133,13 +133,13 @@ class OrchestratorEngine:
                 
                 self.presidio_analyzer = analyzer
                 self.presidio_anonymizer = AnonymizerEngine()
-                print("✅ Presidio PII Engine Ready.")
+                print("Presidio PII Engine Ready.")
             except Exception as e:
-                print(f"⚠️ Presidio Init Failed: {e}")
+                print(f"Presidio Init Failed: {e}")
 
         # 2. Initialize Local LLM (Qwen)
         if LLAMA_AVAILABLE:
-            print("🚀 [초경량 모드] Qwen 2.5 0.5B Q8_0 로드 중...")
+            print("[Lightweight mode] Loading Qwen 2.5 0.5B Q8_0...")
             try:
                 model_path = hf_hub_download(
                     repo_id="Qwen/Qwen2.5-0.5B-Instruct-GGUF",
@@ -147,11 +147,11 @@ class OrchestratorEngine:
                 )
                 cores = multiprocessing.cpu_count()
                 self.local_llm = Llama(model_path=model_path, n_ctx=1024, n_threads=min(cores, 4), verbose=False)
-                print("✅ Local LLM Ready.")
+                print("Local LLM Ready.")
             except Exception as e:
-                print(f"⚠️ Local LLM Load Failed: {e}")
+                print(f"Local LLM Load Failed: {e}")
         else:
-            print("⚠️ [Local LLM] Skipped (llama-cpp-python not installed)")
+            print("[Local LLM] Skipped (llama-cpp-python not installed)")
 
         # 3. Initialize Memory
         if MEM0_AVAILABLE:
@@ -161,7 +161,7 @@ class OrchestratorEngine:
                 abs_db_path = os.path.join(configs.PROJECT_ROOT, "mem_db")
                 os.makedirs(abs_db_path, exist_ok=True)
                 
-                print(f"📁 [Mem0] Setting standard path: {abs_db_path}")
+                print(f"[Mem0] Setting standard path: {abs_db_path}")
                 
                 # Mem0 표준 설정 방식 (path 문자열 직접 전달)
                 mem0_config = {
@@ -188,9 +188,9 @@ class OrchestratorEngine:
                     }
                 }
                 self.memory = Memory.from_config(mem0_config)
-                print(f"✅ Mem0 Memory Initialized with path: {abs_db_path}")
+                print(f"Mem0 Memory Initialized with path: {abs_db_path}")
             except Exception as e:
-                print(f"⚠️ Memory Load Failed: {e}")
+                print(f"Memory Load Failed: {e}")
                 traceback.print_exc()
 
 # Call Session State Manager (In-Memory for Demo)

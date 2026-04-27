@@ -1,8 +1,21 @@
-"""
-OCR 약 식별 파이프라인 Pydantic 모델
-"""
-from typing import Optional, List
+"""OCR 약 식별 파이프라인 Pydantic 모델."""
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
+
+
+DecisionStatus = Literal[
+    "MATCHED",
+    "AMBIGUOUS",
+    "LOW_CONFIDENCE",
+    "NOT_FOUND",
+    "NEED_USER_CONFIRMATION",
+]
+
+
+class OCRToken(BaseModel):
+    """OCR 토큰 단위 신뢰도 정보."""
+    value: str = Field(..., description="OCR 토큰 원문")
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="OCR 신뢰도")
 
 
 class DrugInfo(BaseModel):
@@ -26,6 +39,8 @@ class MatchCandidate(BaseModel):
     drug_info: DrugInfo
     score: float = Field(..., ge=0.0, le=1.0, description="매칭 점수")
     method: str = Field(..., description="매칭 방법 (exact/prefix/ngram/fuzzy/vector)")
+    evidence: Dict[str, Any] = Field(default_factory=dict, description="매칭 및 검증 근거")
+    validation_messages: List[str] = Field(default_factory=list, description="규칙 검증 메시지")
 
 
 class MatchResult(BaseModel):
@@ -41,6 +56,7 @@ class NormalizedDrug(BaseModel):
     dosage: Optional[str] = Field(None, description="분리된 용량 (500mg 등)")
     form_type: Optional[str] = Field(None, description="제형 (정, 캡슐, 시럽 등)")
     original: str = Field(..., description="원본 텍스트")
+    ocr_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="OCR 평균 신뢰도")
 
 
 class PipelineStage(BaseModel):
@@ -61,3 +77,7 @@ class PipelineResult(BaseModel):
     pipeline_stages: List[PipelineStage] = Field(default_factory=list)
     total_duration_ms: float = Field(0.0)
     error_message: Optional[str] = None
+    decision_status: DecisionStatus = Field("NOT_FOUND")
+    match_confidence: float = Field(0.0, ge=0.0, le=1.0)
+    requires_user_confirmation: bool = Field(False)
+    decision_reasons: List[str] = Field(default_factory=list)

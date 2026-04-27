@@ -75,6 +75,11 @@ class VectorMatcher:
                         drug_info=drug_info,
                         score=round(similarity, 3),
                         method="vector",
+                        evidence={
+                            "source": "vector_db",
+                            "distance": round(distance, 4),
+                            "name_match": round(similarity, 3),
+                        },
                     )
                 )
 

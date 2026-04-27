@@ -21,6 +21,7 @@ class LLMDescriptor:
         self,
         candidates: List[MatchCandidate],
         ocr_text: str,
+        decision_status: str = "MATCHED",
     ) -> Dict[str, Any]:
         """
         확정된 약품 정보 + OCR 원문을 LLM에 전달하여 설명 생성
@@ -44,7 +45,7 @@ class LLMDescriptor:
             }
 
         try:
-            messages = self._build_prompt(candidates, ocr_text)
+            messages = self._build_prompt(candidates, ocr_text, decision_status)
 
             # 비동기 LLM 호출
             completion = await self.llm.aclient.chat.completions.create(
@@ -61,7 +62,12 @@ class LLMDescriptor:
             # fallback: DB 정보만으로 기본 설명 생성
             return self._fallback_description(candidates)
 
-    def _build_prompt(self, candidates: List[MatchCandidate], ocr_text: str) -> list:
+    def _build_prompt(
+        self,
+        candidates: List[MatchCandidate],
+        ocr_text: str,
+        decision_status: str,
+    ) -> list:
         """LLM 프롬프트 생성"""
         # 약품 정보를 컨텍스트로 구성
         drug_context = []
@@ -75,11 +81,13 @@ class LLMDescriptor:
 - 사용법: {(drug.use_method_qesitm or '정보 없음')[:300]}
 - 주의사항: {(drug.atpn_qesitm or '정보 없음')[:300]}
 - 매칭 신뢰도: {c.score}
+- 매칭 방법: {c.method}
+- 검증 근거: {json.dumps(c.evidence, ensure_ascii=False)}
 """
             drug_context.append(info)
 
         system_prompt = """당신은 어르신(65세 이상)을 위한 복약 안내 도우미입니다.
-아래 약품 정보를 바탕으로, 어르신이 쉽게 이해할 수 있도록 설명해주세요.
+아래 검증된 약품 정보만 바탕으로, 어르신이 쉽게 이해할 수 있도록 설명해주세요.
 
 **규칙:**
 1. 존댓말 사용 (해요체)
@@ -87,6 +95,9 @@ class LLMDescriptor:
 3. 복용 시간과 방법을 명확하게 안내
 4. 주의사항은 꼭 포함
 5. JSON 형식으로 응답
+6. 제공된 DB 정보에 없는 효능, 부작용, 복용법을 새로 만들지 않기
+7. 약품 식별, 처방 변경, 복용 중단 판단을 하지 않기
+8. MATCHED가 아닌 상태에서는 "확정"이라고 말하지 말고 사용자 확인이 필요하다고 안내하기
 
 **응답 형식:**
 ```json
@@ -115,6 +126,9 @@ class LLMDescriptor:
 """
 
         user_prompt = f"""다음은 약봉지 OCR 텍스트와 DB에서 식별된 약품 정보입니다.
+
+=== 판정 상태 ===
+{decision_status}
 
 === OCR 원문 ===
 {ocr_text}
