@@ -1,6 +1,6 @@
 """
 OCR 약 식별 파이프라인 오케스트레이터
-6단계: OCR → 정규화 → MySQL 1차 → VectorDB 2차 → 규칙 검증 → LLM 설명
+7단계: OCR → 정규화 → MySQL 1차 → VectorDB 2차 → 규칙 검증 → Pseudo-Confidence → LLM 설명
 """
 import time
 from typing import Any, List, Optional, Tuple
@@ -17,22 +17,23 @@ from app.ocr.model.drug_model import (
 )
 from app.ocr.services.llm_descriptor import LLMDescriptor
 from app.ocr.services.mysql_matcher import MySQLMatcher
+from app.ocr.services.pseudo_confidence_scorer import PseudoConfidenceScorer
 from app.ocr.services.rule_validator import RuleValidator
 from app.ocr.services.text_normalizer import TextNormalizer
 
 
 class MedicationPipeline:
     """
-
     OCR 약 식별 파이프라인 오케스트레이터
 
     파이프라인 흐름:
     ① OCR 텍스트 수신
     ② 정규화 (약품명 후보 추출)
-    ③ MySQL 다중 매칭 (exact→prefix→ngram→fuzzy)
+    ③ MySQL 다중 매칭 (exact→alias→error_alias→prefix→ngram→fuzzy)
     ④ VectorDB 2차 매칭 (③에서 score < threshold인 경우만)
-    ⑤ 규칙 검증 (성분/함량/업체/제형)
-    ⑥ LLM 설명 생성
+    ⑤ 규칙 검증 (성분/함량/업체/제형) — evidence 태깅만
+    ⑥ Pseudo-Confidence 점수 재계산
+    ⑦ LLM 설명 생성
     """
 
     LOW_OCR_CONFIDENCE_THRESHOLD = 0.75
@@ -45,6 +46,7 @@ class MedicationPipeline:
         vector_matcher: Any,
         rule_validator: RuleValidator,
         llm_descriptor: LLMDescriptor,
+        pseudo_confidence_scorer: Optional[PseudoConfidenceScorer] = None,
         match_threshold: Optional[float] = None,
     ):
         self.normalizer = text_normalizer
@@ -52,6 +54,7 @@ class MedicationPipeline:
         self.vector_matcher = vector_matcher
         self.rule_validator = rule_validator
         self.llm_descriptor = llm_descriptor
+        self.scorer = pseudo_confidence_scorer or PseudoConfidenceScorer()
         self.threshold = match_threshold or configs.DRUG_MATCH_THRESHOLD
 
     async def process(
@@ -74,6 +77,7 @@ class MedicationPipeline:
         stages: List[PipelineStage] = []
         all_candidates: List[MatchCandidate] = []
         normalized_drugs: List[NormalizedDrug] = []
+        has_alias_conflict = False
 
         logger.info(f"파이프라인 시작 — user_id: {elderly_user_id}, text_len: {len(ocr_text)}")
 
@@ -112,6 +116,8 @@ class MedicationPipeline:
                 result = self.mysql_matcher.match(nd.name)
                 mysql_results[nd.name] = result
                 all_candidates.extend(result.candidates)
+                if result.alias_conflict:
+                    has_alias_conflict = True
             stage_ms = (time.perf_counter() - t0) * 1000
 
             best_mysql_score = max(
@@ -128,7 +134,7 @@ class MedicationPipeline:
                 duration_ms=round(stage_ms, 2),
                 result_summary=(
                     f"best_score={best_mysql_score:.3f}, method={best_mysql_method}, "
-                    f"candidates={len(all_candidates)}"
+                    f"candidates={len(all_candidates)}, alias_conflict={has_alias_conflict}"
                 ),
             ))
 
@@ -157,10 +163,9 @@ class MedicationPipeline:
                 ))
 
             # ──────────────────────────────────
-            # Stage 5: 규칙 검증
+            # Stage 5: 규칙 검증 (evidence 태깅)
             # ──────────────────────────────────
             t0 = time.perf_counter()
-            # 중복 제거 후 상위 후보만 검증
             unique_candidates = self._deduplicate(all_candidates)[:10]
             validated_candidates = []
             for nd in normalized_drugs:
@@ -169,22 +174,39 @@ class MedicationPipeline:
                 )
                 validated_candidates.extend(validated)
 
-            # 최종 중복 제거 + 정렬
-            final_candidates = self._deduplicate(validated_candidates)[:5]
+            validated_unique = self._deduplicate(validated_candidates)[:10]
             stage_ms = (time.perf_counter() - t0) * 1000
 
             stages.append(PipelineStage(
                 stage="rule_validate",
                 duration_ms=round(stage_ms, 2),
-                result_summary=f"검증 완료, final={len(final_candidates)}건",
+                result_summary=f"검증 완료, validated={len(validated_unique)}건",
             ))
 
             # ──────────────────────────────────
-            # Stage 6: 최종 판정
+            # Stage 6: Pseudo-Confidence 점수 재계산
+            # ──────────────────────────────────
+            t0 = time.perf_counter()
+            scored_candidates = []
+            for nd in normalized_drugs:
+                scored = self.scorer.score(validated_unique, nd)
+                scored_candidates.extend(scored)
+
+            final_candidates = self._deduplicate(scored_candidates)[:5]
+            stage_ms = (time.perf_counter() - t0) * 1000
+
+            stages.append(PipelineStage(
+                stage="pseudo_confidence",
+                duration_ms=round(stage_ms, 2),
+                result_summary=f"점수 재계산 완료, final={len(final_candidates)}건",
+            ))
+
+            # ──────────────────────────────────
+            # Stage 7: 최종 판정
             # ──────────────────────────────────
             t0 = time.perf_counter()
             decision_status, match_confidence, requires_confirmation, decision_reasons = (
-                self._decide(final_candidates, normalized_drugs)
+                self._decide(final_candidates, normalized_drugs, has_alias_conflict)
             )
             stage_ms = (time.perf_counter() - t0) * 1000
 
@@ -198,7 +220,7 @@ class MedicationPipeline:
             ))
 
             # ──────────────────────────────────
-            # Stage 7: LLM 설명 생성
+            # Stage 8: LLM 설명 생성
             # ──────────────────────────────────
             t0 = time.perf_counter()
             llm_candidates = final_candidates if decision_status == "MATCHED" else final_candidates[:3]
@@ -271,6 +293,7 @@ class MedicationPipeline:
         self,
         candidates: List[MatchCandidate],
         normalized_drugs: List[NormalizedDrug],
+        alias_conflict: bool = False,
     ) -> Tuple[DecisionStatus, float, bool, List[str]]:
         """후보 점수와 규칙 검증 결과로 최종 상태를 판정."""
         if not candidates:
@@ -279,6 +302,14 @@ class MedicationPipeline:
         top = candidates[0]
         second = candidates[1] if len(candidates) > 1 else None
         reasons: List[str] = [f"최고 후보: {top.drug_info.item_name} ({top.score:.3f})"]
+
+        # Alias 충돌
+        if alias_conflict:
+            conflict_names = [c.drug_info.item_name for c in candidates[:3]]
+            reasons.append(
+                f"alias 충돌 — 동일 별칭이 복수 약품에 매핑됩니다: {', '.join(conflict_names)}"
+            )
+            return "AMBIGUOUS", top.score, True, reasons
 
         low_ocr = [
             nd.ocr_confidence

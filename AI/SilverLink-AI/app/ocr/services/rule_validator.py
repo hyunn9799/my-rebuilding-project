@@ -1,4 +1,8 @@
-"""Rule-based candidate validation for medication OCR matching."""
+"""Rule-based candidate validation for medication OCR matching.
+
+RuleValidator는 evidence 태깅과 검증 메시지 생성만 담당한다.
+점수 재계산은 PseudoConfidenceScorer가 수행한다.
+"""
 import re
 from decimal import Decimal, InvalidOperation
 from typing import List, Optional
@@ -9,48 +13,48 @@ from app.ocr.model.drug_model import MatchCandidate, NormalizedDrug
 
 
 class RuleValidator:
-    """Re-rank candidates using high-risk medication entities."""
+    """Evidence 태깅 및 규칙 검증 메시지 생성."""
 
     UNIT_ALIASES = {
         "mg": "mg",
         "m.g": "mg",
-        "\ubc00\ub9ac\uadf8\ub7a8": "mg",
-        "\ubc00\ub9ac\uadf8\ub78c": "mg",
+        "밀리그램": "mg",
+        "밀리그람": "mg",
         "ml": "ml",
-        "\ubc00\ub9ac\ub9ac\ud130": "ml",
-        "\ubc00\ub9ac\ub9ac\ud2b8": "ml",
+        "밀리리터": "ml",
+        "밀리리트": "ml",
         "mcg": "mcg",
-        "\u03bcg": "mcg",
-        "\ub9c8\uc774\ud06c\ub85c\uadf8\ub7a8": "mcg",
-        "\ub9c8\uc774\ud06c\ub85c\uadf8\ub78c": "mcg",
+        "μg": "mcg",
+        "마이크로그램": "mcg",
+        "마이크로그람": "mcg",
         "g": "g",
-        "\uadf8\ub7a8": "g",
-        "\uadf8\ub78c": "g",
+        "그램": "g",
+        "그람": "g",
         "iu": "iu",
-        "\ub2e8\uc704": "iu",
+        "단위": "iu",
     }
     UNIT_PATTERN = (
-        r"mg|m\.g|ml|mcg|\u03bcg|g|iu|"
-        r"\ubc00\ub9ac\uadf8\ub7a8|\ubc00\ub9ac\uadf8\ub78c|"
-        r"\ubc00\ub9ac\ub9ac\ud130|\ubc00\ub9ac\ub9ac\ud2b8|"
-        r"\ub9c8\uc774\ud06c\ub85c\uadf8\ub7a8|\ub9c8\uc774\ud06c\ub85c\uadf8\ub78c|"
-        r"\uadf8\ub7a8|\uadf8\ub78c|\ub2e8\uc704"
+        r"mg|m\.g|ml|mcg|μg|g|iu|"
+        r"밀리그램|밀리그람|"
+        r"밀리리터|밀리리트|"
+        r"마이크로그램|마이크로그람|"
+        r"그램|그람|단위"
     )
     STRENGTH_PATTERN = re.compile(
         rf"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>{UNIT_PATTERN})(?![a-zA-Z])",
         re.IGNORECASE,
     )
     KEYWORDS = [
-        "\ud574\uc5f4",
-        "\uc9c4\ud1b5",
-        "\uac10\uae30",
-        "\uace0\ud608\uc555",
-        "\ud608\ub2f9",
-        "\uc704\uc7a5",
-        "\uc18c\ud654",
-        "\ubd88\uba74",
-        "\uc54c\ub808\ub974\uae30",
-        "\ucc9c\uc2dd",
+        "해열",
+        "진통",
+        "감기",
+        "고혈압",
+        "혈당",
+        "위장",
+        "소화",
+        "불면",
+        "알레르기",
+        "천식",
     ]
 
     def validate(
@@ -59,6 +63,7 @@ class RuleValidator:
         ocr_text: str,
         normalized_drug: Optional[NormalizedDrug] = None,
     ) -> List[MatchCandidate]:
+        """evidence 태깅만 수행. 점수는 변경하지 않는다."""
         if not candidates:
             return candidates
 
@@ -66,68 +71,60 @@ class RuleValidator:
         validated: list[MatchCandidate] = []
 
         for candidate in candidates:
-            bonus = 0.0
-            penalty = 0.0
             drug = candidate.drug_info
             evidence = dict(candidate.evidence)
             messages = list(candidate.validation_messages)
 
+            # 제조사 일치
             if drug.entp_name and drug.entp_name in ocr_text:
-                bonus += 0.04
                 evidence["manufacturer_match"] = True
                 messages.append(f"manufacturer matched: {drug.entp_name}")
             elif drug.entp_name:
                 evidence.setdefault("manufacturer_match", None)
 
+            # 용량 일치
             if normalized_drug and normalized_drug.dosage:
                 strength_result = self._compare_strength(normalized_drug.dosage, drug.item_name)
                 evidence["ocr_strength"] = normalized_drug.dosage
 
                 if strength_result is True:
-                    bonus += 0.12
                     evidence["strength_match"] = True
                     messages.append(f"strength matched: {normalized_drug.dosage}")
                 elif strength_result is False:
-                    penalty += 0.35
                     evidence["strength_match"] = False
                     messages.append(f"strength mismatch: OCR={normalized_drug.dosage}, DB={drug.item_name}")
                 else:
                     evidence["strength_match"] = None
 
+            # 제형 일치
             if normalized_drug and normalized_drug.form_type:
                 if normalized_drug.form_type.lower() in drug.item_name.lower():
-                    bonus += 0.03
                     evidence["form_match"] = True
                     messages.append(f"form matched: {normalized_drug.form_type}")
                 else:
                     evidence["form_match"] = False
 
+            # OCR 신뢰도
             if normalized_drug and normalized_drug.ocr_confidence is not None:
                 evidence["ocr_confidence"] = normalized_drug.ocr_confidence
                 if normalized_drug.ocr_confidence < 0.75:
-                    penalty += 0.08
                     messages.append(f"low OCR confidence: {normalized_drug.ocr_confidence}")
 
+            # 키워드 매칭
             keyword_bonus = self._keyword_bonus(drug.efcy_qesitm or "", ocr_lower)
             if keyword_bonus:
-                bonus += keyword_bonus
                 evidence["keyword_bonus"] = round(keyword_bonus, 3)
-
-            new_score = max(0.0, min(candidate.score + bonus - penalty, 1.0))
-            evidence["rule_bonus"] = round(bonus, 3)
-            evidence["rule_penalty"] = round(penalty, 3)
 
             validated.append(
                 MatchCandidate(
                     drug_info=drug,
-                    score=round(new_score, 3),
+                    score=candidate.score,  # 점수 변경 없음
                     method=candidate.method,
                     evidence=evidence,
                     validation_messages=messages,
                 )
             )
 
-        validated.sort(key=lambda item: item.score, reverse=True)
         return validated
 
     def _compare_strength(self, ocr_dosage: str, item_name: str) -> Optional[bool]:

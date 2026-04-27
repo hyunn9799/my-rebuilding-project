@@ -54,6 +54,54 @@ Frontend build: passed
 
 - `npm ci`는 최초 sandbox 권한 문제로 실패해 권한 승인 후 재실행했다.
 
+### 2026-04-27 Phase 3 Entity-weighted pseudo-confidence 완료
+
+- `ScoreBreakdown` 모델을 추가하여 7가지 세부 지표(name, strength, unit, form, manufacturer, top_gap, penalty) 기반 점수를 구조화했다.
+- `PseudoConfidenceScorer` 모듈을 신규 추가했다.
+  - 2-pass 방식으로 1차 점수 계산 후, 단일 최고점에만 top1-top2 gap 보너스를 부여하여 공정성을 보장했다.
+  - 용량 불일치(-0.40)와 낮은 OCR 신뢰도(-0.10)에 대한 강한 패널티를 적용했다.
+- `RuleValidator`를 리팩터링하여 점수 계산 로직을 제거하고, 순수하게 evidence 태깅 및 검증 메시지 생성만 담당하도록 분리했다.
+- `MedicationPipeline`에 Scorer를 Stage 6로 통합했다.
+- 단위 테스트(`test_pseudo_confidence.py`)를 추가하여 용량 충돌 시 점수 급감(자동 확정 방지), gap 보너스, 제형/제조사 보너스 등을 검증했다.
+
+검증:
+
+```bash
+python -m pytest tests\unit_tests\test_pseudo_confidence.py tests\unit_tests\test_mysql_matcher.py tests\unit_tests\test_medication_pipeline.py -v
+python -m compileall -f app\ocr
+```
+
+결과:
+
+```text
+18 passed (pseudo_confidence 8 + mysql_matcher 5 + pipeline 5)
+Python OCR compile: passed
+```
+
+### 2026-04-27 Phase 2 alias 충돌 검증 및 seed 스크립트 완료
+
+- `MatchResult`에 `alias_conflict` 필드를 추가했다.
+- `MySQLMatcher._has_alias_conflict()`로 alias/error_alias 후보가 2개 이상 서로 다른 `item_seq`에 매핑되면 충돌을 감지한다.
+- `MedicationPipeline._decide()`에서 `alias_conflict=True`이면 `AMBIGUOUS` + `requires_user_confirmation=True`로 판정한다.
+- `scripts/seed_aliases.py`를 추가했다.
+  - `medications_master` 약품명에서 괄호 제거, 브랜드명 추출, 용량 제거로 alias를 생성한다.
+  - OCR 오인식 변형(O/0, l/1, digit spacing 등)으로 error_alias를 생성한다.
+  - `ON DUPLICATE KEY UPDATE` 기반 upsert로 재실행 안전하다.
+
+검증:
+
+```bash
+python -m pytest tests\unit_tests\test_mysql_matcher.py tests\unit_tests\test_medication_pipeline.py -v
+python -m compileall -f app\ocr scripts\seed_aliases.py
+```
+
+결과:
+
+```text
+11 passed (mysql_matcher 5 + pipeline 6)
+Python OCR + seed script compile: passed
+```
+
 ### 2026-04-27 Phase 2 alias/error alias 검색 계층 추가
 
 - `DrugRepository`에 `medication_aliases` 정확 일치 조회를 추가했다.

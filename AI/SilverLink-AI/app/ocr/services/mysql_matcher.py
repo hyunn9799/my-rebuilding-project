@@ -2,7 +2,7 @@
 MySQL 기반 약품명 다중 매칭 서비스
 exact → alias → error_alias → prefix → ngram → fuzzy 순차 실행
 """
-from typing import List, Optional
+from typing import List, Optional, Set
 from loguru import logger
 from rapidfuzz import fuzz
 
@@ -26,7 +26,7 @@ class MySQLMatcher:
             normalized_name: 정규화된 약품명
 
         Returns:
-            MatchResult (candidates, best_score, method)
+            MatchResult (candidates, best_score, method, alias_conflict)
         """
         if not normalized_name or len(normalized_name) < 2:
             return MatchResult()
@@ -44,25 +44,36 @@ class MySQLMatcher:
         # Stage 2: alias match
         alias_candidates = self._try_alias(normalized_name)
         candidates.extend(alias_candidates)
+        alias_conflict = self._has_alias_conflict(alias_candidates)
         best = self._get_best(candidates)
         if best and best.score >= self.threshold:
-            logger.info(f"MySQL alias 매칭 성공: '{normalized_name}' → score={best.score}")
+            logger.info(
+                f"MySQL alias 매칭 성공: '{normalized_name}' → "
+                f"score={best.score}, conflict={alias_conflict}"
+            )
             return MatchResult(
                 candidates=self._deduplicate(candidates),
                 best_score=best.score,
                 method="alias",
+                alias_conflict=alias_conflict,
             )
 
         # Stage 3: OCR error alias match
         error_alias_candidates = self._try_error_alias(normalized_name)
         candidates.extend(error_alias_candidates)
+        error_alias_conflict = self._has_alias_conflict(error_alias_candidates)
+        alias_conflict = alias_conflict or error_alias_conflict
         best = self._get_best(candidates)
         if best and best.score >= self.threshold:
-            logger.info(f"MySQL error_alias 매칭 성공: '{normalized_name}' → score={best.score}")
+            logger.info(
+                f"MySQL error_alias 매칭 성공: '{normalized_name}' → "
+                f"score={best.score}, conflict={alias_conflict}"
+            )
             return MatchResult(
                 candidates=self._deduplicate(candidates),
                 best_score=best.score,
                 method="error_alias",
+                alias_conflict=alias_conflict,
             )
 
         # Stage 4: prefix match
@@ -75,6 +86,7 @@ class MySQLMatcher:
                 candidates=self._deduplicate(candidates),
                 best_score=best.score,
                 method="prefix",
+                alias_conflict=alias_conflict,
             )
 
         # Stage 5: ngram match
@@ -87,6 +99,7 @@ class MySQLMatcher:
                 candidates=self._deduplicate(candidates),
                 best_score=best.score,
                 method="ngram",
+                alias_conflict=alias_conflict,
             )
 
         # Stage 6: fuzzy match (Levenshtein)
@@ -105,7 +118,24 @@ class MySQLMatcher:
             candidates=self._deduplicate(candidates),
             best_score=best.score if best else 0.0,
             method=final_method,
+            alias_conflict=alias_conflict,
         )
+
+    # ------------------------------------------------------------------
+    # Alias conflict detection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _has_alias_conflict(candidates: List[MatchCandidate]) -> bool:
+        """alias/error_alias 후보가 2개 이상 서로 다른 drug(item_seq)에 매핑되면 충돌."""
+        if len(candidates) < 2:
+            return False
+        unique_seqs: Set[str] = {c.drug_info.item_seq for c in candidates}
+        return len(unique_seqs) >= 2
+
+    # ------------------------------------------------------------------
+    # Stage helpers
+    # ------------------------------------------------------------------
 
     def _try_exact(self, name: str) -> List[MatchCandidate]:
         """exact match"""

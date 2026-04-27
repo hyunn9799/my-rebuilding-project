@@ -34,6 +34,30 @@ class DrugInfo(BaseModel):
     item_image: Optional[str] = Field(None, description="이미지URL")
 
 
+class ScoreBreakdown(BaseModel):
+    """Entity-weighted pseudo-confidence 점수 분해."""
+    name_match: float = Field(0.0, description="이름 매칭 점수 (0~0.30)")
+    strength_match: float = Field(0.0, description="용량 일치 점수 (0~0.25)")
+    unit_match: float = Field(0.0, description="단위 일치 점수 (0~0.15)")
+    form_match: float = Field(0.0, description="제형 일치 점수 (0~0.10)")
+    manufacturer_match: float = Field(0.0, description="제조사 일치 점수 (0~0.10)")
+    top_gap: float = Field(0.0, description="top1-top2 갭 보너스 (0~0.10)")
+    penalty: float = Field(0.0, description="충돌 패널티 (0 이하)")
+
+    @property
+    def total(self) -> float:
+        raw = (
+            self.name_match
+            + self.strength_match
+            + self.unit_match
+            + self.form_match
+            + self.manufacturer_match
+            + self.top_gap
+            + self.penalty
+        )
+        return round(max(0.0, min(raw, 1.0)), 3)
+
+
 class MatchCandidate(BaseModel):
     """매칭 후보 결과"""
     drug_info: DrugInfo
@@ -48,6 +72,10 @@ class MatchResult(BaseModel):
     candidates: List[MatchCandidate] = Field(default_factory=list)
     best_score: float = Field(0.0, description="최고 점수")
     method: str = Field("none", description="최고 점수 매칭 방법")
+    alias_conflict: bool = Field(
+        False,
+        description="alias/error_alias 결과가 복수 drug에 매핑되어 충돌 발생",
+    )
 
 
 class NormalizedDrug(BaseModel):
