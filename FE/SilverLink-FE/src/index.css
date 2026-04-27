@@ -1,0 +1,172 @@
+@import '@fontsource/noto-sans-kr/400.css';
+@import '@fontsource/noto-sans-kr/500.css';
+@import '@fontsource/noto-sans-kr/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 국가 공공 복지 서비스 디자인 시스템 */
+
+@layer base {
+  :root {
+    /* 따뜻하고 신뢰감 있는 공공 복지 서비스 테마 */
+    --background: 40 33% 98%;
+    --foreground: 220 20% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 20%;
+
+    /* 청록색 계열 - 신뢰와 안정 */
+    --primary: 172 50% 38%;
+    --primary-foreground: 0 0% 100%;
+
+    /* 부드러운 크림/베이지 */
+    --secondary: 38 40% 94%;
+    --secondary-foreground: 220 20% 25%;
+
+    /* 따뜻한 코랄/주황 - 돌봄과 따뜻함 */
+    --accent: 16 80% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --muted: 40 20% 92%;
+    --muted-foreground: 220 10% 50%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* 성공/안전 */
+    --success: 145 60% 42%;
+    --success-foreground: 0 0% 100%;
+
+    /* 경고 */
+    --warning: 38 92% 55%;
+    --warning-foreground: 220 20% 15%;
+
+    /* 정보 */
+    --info: 210 80% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 172 50% 38%;
+
+    --radius: 0.75rem;
+
+    /* 사이드바 */
+    --sidebar-background: 172 45% 25%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 172 50% 30%;
+    --sidebar-accent: 172 40% 32%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 172 35% 35%;
+    --sidebar-ring: 172 50% 50%;
+
+    /* 그라데이션 */
+    --gradient-primary: linear-gradient(135deg, hsl(172 50% 38%), hsl(180 45% 45%));
+    --gradient-warm: linear-gradient(135deg, hsl(16 80% 60%), hsl(30 85% 65%));
+    --gradient-hero: linear-gradient(180deg, hsl(40 33% 98%), hsl(40 25% 95%));
+
+    /* 그림자 */
+    --shadow-soft: 0 4px 20px -4px hsl(220 20% 20% / 0.08);
+    --shadow-card: 0 2px 12px -2px hsl(220 20% 20% / 0.06);
+    --shadow-elevated: 0 8px 30px -8px hsl(220 20% 20% / 0.12);
+  }
+
+  .dark {
+    --background: 220 20% 12%;
+    --foreground: 40 20% 95%;
+
+    --card: 220 18% 16%;
+    --card-foreground: 40 20% 95%;
+
+    --popover: 220 18% 16%;
+    --popover-foreground: 40 20% 95%;
+
+    --primary: 172 45% 50%;
+    --primary-foreground: 220 20% 10%;
+
+    --secondary: 220 15% 22%;
+    --secondary-foreground: 40 20% 90%;
+
+    --accent: 16 75% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --muted: 220 15% 20%;
+    --muted-foreground: 220 10% 60%;
+
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 145 55% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 85% 50%;
+    --warning-foreground: 220 20% 10%;
+
+    --info: 210 75% 50%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 220 15% 25%;
+    --input: 220 15% 25%;
+    --ring: 172 45% 50%;
+
+    --sidebar-background: 220 20% 10%;
+    --sidebar-foreground: 40 20% 90%;
+    --sidebar-primary: 172 45% 50%;
+    --sidebar-primary-foreground: 220 20% 10%;
+    --sidebar-accent: 220 15% 18%;
+    --sidebar-accent-foreground: 40 20% 90%;
+    --sidebar-border: 220 15% 20%;
+    --sidebar-ring: 172 45% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Noto Sans KR', sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  .text-gradient-primary {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+
+  .bg-gradient-primary {
+    background-image: var(--gradient-primary);
+  }
+
+  .bg-gradient-warm {
+    background-image: var(--gradient-warm);
+  }
+
+  .bg-gradient-hero {
+    background-image: var(--gradient-hero);
+  }
+
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+}
