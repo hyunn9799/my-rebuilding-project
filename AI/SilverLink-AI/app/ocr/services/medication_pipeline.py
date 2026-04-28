@@ -62,6 +62,26 @@ class MedicationPipeline:
         self.ocr_result_repo = ocr_result_repo
         self.llm_extractor = llm_extractor
 
+    @property
+    def drug_index(self):
+        return getattr(self.mysql_matcher, "dictionary_index", None)
+
+    def reload_dictionary(self) -> bool:
+        """Reload the underlying LocalDrugIndex if available."""
+        import logging
+        from loguru import logger
+        drug_index = getattr(self.mysql_matcher, "dictionary_index", None)
+
+        if not drug_index:
+            logger.warning("Dictionary index is not available for reload.")
+            return False
+
+        if not hasattr(drug_index, "reload"):
+            logger.warning("Dictionary index does not support reload().")
+            return False
+
+        return drug_index.reload()
+
     async def process(
         self,
         ocr_text: str,

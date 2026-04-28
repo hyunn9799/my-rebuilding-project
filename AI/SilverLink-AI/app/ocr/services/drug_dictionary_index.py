@@ -154,6 +154,53 @@ class DrugDictionaryIndex:
                 logger.warning("Drug dictionary index load failed; using MySQL fallback: {}", exc)
                 return False
 
+    def reload(self) -> bool:
+        """
+        Force reload dictionary from DB.
+
+        Keeps the existing index if reload fails.
+
+        TODO:
+        In multi-worker deployment, this reload only affects the current worker.
+        Use rolling restart, dictionary_version polling, or pub/sub for production-wide reload.
+        """
+        try:
+            if self.repo is None:
+                logger.warning("Cannot reload: drug_repository is not configured.")
+                return False
+
+            with self._load_lock:
+                started = time.perf_counter()
+                medications = self.repo.fetch_all_medications_for_index()
+                aliases = self.repo.fetch_all_aliases_for_index()
+                error_aliases = self.repo.fetch_all_error_aliases_for_index()
+                new_index = self.build(medications, aliases, error_aliases)
+                
+                # Atomic swap: assign fully-built index in one reference update
+                self._current = new_index
+                self.exact_map = new_index.exact_map
+                self.alias_map = new_index.alias_map
+                self.error_alias_map = new_index.error_alias_map
+                self.ngram_index = new_index.ngram_index
+                self.drug_summary_map = new_index.drug_summary_map
+                self.loaded_at = time.time()
+                self._loaded = True
+                self._load_failed = False
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                
+                logger.info(
+                    "DrugDictionaryIndex reloaded successfully: drugs={}, aliases={}, error_aliases={}, ngram_tokens={}, elapsed_ms={:.1f}",
+                    len(new_index.drug_summary_map),
+                    sum(len(v) for v in new_index.alias_map.values()),
+                    sum(len(v) for v in new_index.error_alias_map.values()),
+                    len(new_index.ngram_index),
+                    elapsed_ms,
+                )
+                return True
+        except Exception:
+            logger.exception("DrugDictionaryIndex reload failed. Existing index will be kept.")
+            return False
+
     @classmethod
     def build(
         cls,

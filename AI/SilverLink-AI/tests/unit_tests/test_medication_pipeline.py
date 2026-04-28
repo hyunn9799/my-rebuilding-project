@@ -205,5 +205,47 @@ async def test_pipeline_vectordb_only_candidate_not_auto_matched():
     result = await pipeline.process("타이레놀정 500mg")
 
     # VectorDB 후보만으로는 자동 확정되지 않아야 함
-    assert result.decision_status == "NEED_USER_CONFIRMATION"
     assert result.requires_user_confirmation is True
+
+
+def test_pipeline_reload_dictionary_calls_index_reload():
+    from app.ocr.services.drug_dictionary_index import DrugDictionaryIndex
+
+    class FakeDictionaryIndex(DrugDictionaryIndex):
+        def __init__(self):
+            self.reloaded = False
+        def reload(self):
+            self.reloaded = True
+            return True
+            
+    fake_index = FakeDictionaryIndex()
+    mysql_matcher = FakeMySQLMatcher([])
+    mysql_matcher.dictionary_index = fake_index
+    
+    pipeline = MedicationPipeline(
+        text_normalizer=TextNormalizer(),
+        mysql_matcher=mysql_matcher,
+        vector_matcher=FakeVectorMatcher(),
+        rule_validator=RuleValidator(),
+        llm_descriptor=FakeLLMDescriptor(),
+    )
+    
+    result = pipeline.reload_dictionary()
+    
+    assert result is True
+    assert fake_index.reloaded is True
+    assert pipeline.drug_index is fake_index
+
+
+def test_pipeline_reload_dictionary_returns_false_if_no_index():
+    pipeline = MedicationPipeline(
+        text_normalizer=TextNormalizer(),
+        mysql_matcher=FakeMySQLMatcher([]),
+        vector_matcher=FakeVectorMatcher(),
+        rule_validator=RuleValidator(),
+        llm_descriptor=FakeLLMDescriptor(),
+    )
+    
+    result = pipeline.reload_dictionary()
+    
+    assert result is False

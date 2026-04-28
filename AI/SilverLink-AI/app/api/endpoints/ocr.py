@@ -363,10 +363,16 @@ async def reload_dictionary(
     pipeline: MedicationPipeline = Depends(Provide[Container.medication_pipeline]),
 ):
     try:
-        if hasattr(pipeline, 'drug_index') and pipeline.drug_index:
-            pipeline.drug_index.reload()
-            return {"success": True, "message": "LocalDrugIndex 리로드 완료"}
-        return {"success": True, "message": "DrugIndex 없음 (리로드 불필요)"}
+        # TODO: reload-dictionary endpoint는 admin 권한 또는 내부 서비스 호출로 보호해야 한다.
+        # TODO: FastAPI/Uvicorn multi-worker 환경에서는 reload 요청을 처리한 worker의 LocalDrugIndex만 갱신된다.
+        # 운영 환경에서는 서버 재시작, rolling restart, dictionary_version polling, Redis pub/sub 등 별도 동기화 전략이 필요하다.
+        # TODO: Spring Boot approve API에서 medication_alias_suggestions 승인 트랜잭션이 commit된 이후에
+        # FastAPI /admin/reload-dictionary를 호출해야 한다.
+        ok = pipeline.reload_dictionary()
+        if ok:
+            return {"success": True, "message": "Dictionary reloaded successfully"}
+        else:
+            return {"success": False, "message": "Dictionary reload failed. Existing index was kept."}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
