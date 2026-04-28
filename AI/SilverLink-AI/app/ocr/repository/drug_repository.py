@@ -251,6 +251,66 @@ class DrugRepository:
     # CRUD (적재 스크립트용)
     # ────────────────────────────────────────────
 
+    def fetch_all_medications_for_index(self) -> List[DrugInfo]:
+        """Local memory index 초기화를 위한 전체 약품 조회."""
+        connection = None
+        try:
+            connection = self._get_connection()
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT * FROM medications_master")
+                rows = cursor.fetchall()
+                return [self._row_to_drug_info(r) for r in rows]
+        except Exception as e:
+            logger.error(f"fetch_all_medications_for_index 실패: {e}")
+            return []
+        finally:
+            if connection:
+                connection.close()
+
+    def fetch_all_aliases_for_index(self) -> List[Dict[str, Any]]:
+        """Local memory index 초기화를 위한 alias 전체 조회."""
+        connection = None
+        try:
+            connection = self._get_connection()
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT item_seq, alias_name, alias_normalized, source AS alias_source
+                    FROM medication_aliases
+                    WHERE is_active = 1
+                """)
+                return list(cursor.fetchall())
+        except Exception as e:
+            logger.error(f"fetch_all_aliases_for_index 실패: {e}")
+            return []
+        finally:
+            if connection:
+                connection.close()
+
+    def fetch_all_error_aliases_for_index(self) -> List[Dict[str, Any]]:
+        """Local memory index 초기화를 위한 OCR error alias 전체 조회."""
+        connection = None
+        try:
+            connection = self._get_connection()
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT
+                        item_seq,
+                        error_text,
+                        normalized_error_text,
+                        correction_reason,
+                        confidence,
+                        source AS error_alias_source
+                    FROM medication_error_aliases
+                    WHERE is_active = 1
+                """)
+                return list(cursor.fetchall())
+        except Exception as e:
+            logger.error(f"fetch_all_error_aliases_for_index 실패: {e}")
+            return []
+        finally:
+            if connection:
+                connection.close()
+
     def upsert_drug(self, drug: DrugInfo) -> bool:
         """약품 정보 upsert (INSERT ON DUPLICATE KEY UPDATE)"""
         connection = None

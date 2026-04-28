@@ -22,6 +22,7 @@ from app.ocr.repository.drug_repository import DrugRepository
 from app.ocr.repository.drug_vector_repository import DrugVectorRepository
 from app.ocr.services.text_normalizer import TextNormalizer
 from app.ocr.services.mysql_matcher import MySQLMatcher
+from app.ocr.services.drug_dictionary_index import DrugDictionaryIndex
 from app.ocr.services.vector_matcher import VectorMatcher
 from app.ocr.services.rule_validator import RuleValidator
 from app.ocr.services.llm_descriptor import LLMDescriptor
@@ -69,7 +70,15 @@ class Container(containers.DeclarativeContainer):
     drug_repository = providers.Factory(DrugRepository)
     drug_vector_repository = providers.Singleton(DrugVectorRepository)
     text_normalizer = providers.Factory(TextNormalizer)
-    mysql_matcher = providers.Factory(MySQLMatcher, drug_repository=drug_repository)
+    drug_dictionary_index = providers.Singleton(
+        DrugDictionaryIndex,
+        drug_repository=drug_repository,
+    )
+    mysql_matcher = providers.Factory(
+        MySQLMatcher,
+        drug_repository=drug_repository,
+        dictionary_index=drug_dictionary_index,
+    )
     vector_matcher = providers.Factory(
         VectorMatcher,
         drug_repository=drug_repository,

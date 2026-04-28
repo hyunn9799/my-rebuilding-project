@@ -59,7 +59,8 @@ def test_mysql_matcher_uses_alias_before_prefix():
     assert result.method == "alias"
     assert result.best_score == 0.98
     assert result.candidates[0].method == "alias"
-    assert result.candidates[0].evidence["source"] == "mysql_alias"
+    assert result.candidates[0].evidence["source"] == "mysql_fallback"
+    assert result.candidates[0].evidence["match_method"] == "mysql_alias"
     assert result.candidates[0].evidence["alias_name"] == "타이레놀"
     assert repo.calls == ["exact", "alias"]
     assert result.alias_conflict is False
@@ -85,7 +86,8 @@ def test_mysql_matcher_uses_error_alias_before_prefix():
     assert result.method == "error_alias"
     assert result.best_score == 0.855
     assert result.candidates[0].method == "error_alias"
-    assert result.candidates[0].evidence["source"] == "mysql_error_alias"
+    assert result.candidates[0].evidence["source"] == "mysql_fallback"
+    assert result.candidates[0].evidence["match_method"] == "mysql_error_alias"
     assert result.candidates[0].evidence["error_text"] == "타이레놀5OOmg"
     assert repo.calls == ["exact", "alias", "error_alias"]
     assert result.alias_conflict is False

@@ -1,6 +1,6 @@
 """
 MySQL 기반 약품명 다중 매칭 서비스
-exact → alias → error_alias → prefix → ngram → fuzzy 순차 실행
+LocalDrugIndex 우선, 실패 시 MySQL fallback 실행
 """
 from typing import List, Optional, Set
 from loguru import logger
@@ -9,14 +9,21 @@ from rapidfuzz import fuzz
 from app.core.config import configs
 from app.ocr.repository.drug_repository import DrugRepository
 from app.ocr.model.drug_model import DrugInfo, MatchCandidate, MatchResult
+from app.ocr.services.drug_dictionary_index import DrugDictionaryIndex
 
 
 class MySQLMatcher:
     """MySQL 기반 순차 매칭"""
 
-    def __init__(self, drug_repository: DrugRepository, threshold: Optional[float] = None):
+    def __init__(
+        self,
+        drug_repository: DrugRepository,
+        threshold: Optional[float] = None,
+        dictionary_index: Optional[DrugDictionaryIndex] = None,
+    ):
         self.repo = drug_repository
         self.threshold = threshold or configs.DRUG_MATCH_THRESHOLD
+        self.dictionary_index = dictionary_index
 
     def match(self, normalized_name: str) -> MatchResult:
         """
@@ -31,6 +38,45 @@ class MySQLMatcher:
         if not normalized_name or len(normalized_name) < 2:
             return MatchResult()
 
+        local_result = self._try_local_index(normalized_name)
+        if local_result is not None:
+            if local_result.candidates and local_result.best_score >= self.threshold:
+                logger.info(
+                    "Local dictionary match succeeded: '{}' -> method={}, score={}",
+                    normalized_name,
+                    local_result.method,
+                    local_result.best_score,
+                )
+                return local_result
+
+            if local_result.candidates:
+                fallback_result = self._match_mysql_fallback(normalized_name, include_fuzzy=False)
+                merged = self._deduplicate([*local_result.candidates, *fallback_result.candidates])
+                best = self._get_best(merged)
+                return MatchResult(
+                    candidates=merged,
+                    best_score=best.score if best else 0.0,
+                    method=best.method if best else fallback_result.method,
+                    alias_conflict=local_result.alias_conflict or fallback_result.alias_conflict,
+                )
+
+            return self._match_mysql_fallback(normalized_name, include_fuzzy=False)
+
+        return self._match_mysql_fallback(normalized_name, include_fuzzy=True)
+
+    def _try_local_index(self, normalized_name: str) -> Optional[MatchResult]:
+        if not self.dictionary_index:
+            return None
+        try:
+            result = self.dictionary_index.match(normalized_name, self.threshold)
+        except Exception as exc:
+            logger.warning("Local dictionary lookup failed; using MySQL fallback: {}", exc)
+            return None
+        if result.method == "local_unavailable":
+            return None
+        return result
+
+    def _match_mysql_fallback(self, normalized_name: str, include_fuzzy: bool = True) -> MatchResult:
         # Stage 1: exact match
         candidates = self._try_exact(normalized_name)
         if candidates and candidates[0].score >= self.threshold:
@@ -103,7 +149,7 @@ class MySQLMatcher:
             )
 
         # Stage 6: fuzzy match (Levenshtein)
-        fuzzy_candidates = self._try_fuzzy(normalized_name)
+        fuzzy_candidates = self._try_fuzzy(normalized_name) if include_fuzzy else []
         candidates.extend(fuzzy_candidates)
         best = self._get_best(candidates)
 
@@ -145,7 +191,7 @@ class MySQLMatcher:
                 drug_info=drug,
                 score=score,
                 method="exact",
-                evidence={"name_match": score, "source": "mysql_exact"},
+                evidence={"name_match": score, "source": "mysql_fallback", "match_method": "mysql_exact"},
             )
             for drug, score in results
         ]
@@ -160,7 +206,8 @@ class MySQLMatcher:
                 method="alias",
                 evidence={
                     "name_match": score,
-                    "source": "mysql_alias",
+                    "source": "mysql_fallback",
+                    "match_method": "mysql_alias",
                     **evidence,
                 },
             )
@@ -177,7 +224,8 @@ class MySQLMatcher:
                 method="error_alias",
                 evidence={
                     "name_match": score,
-                    "source": "mysql_error_alias",
+                    "source": "mysql_fallback",
+                    "match_method": "mysql_error_alias",
                     **evidence,
                 },
             )
@@ -192,7 +240,7 @@ class MySQLMatcher:
                 drug_info=drug,
                 score=score,
                 method="prefix",
-                evidence={"name_match": score, "source": "mysql_prefix"},
+                evidence={"name_match": score, "source": "mysql_fallback", "match_method": "mysql_prefix"},
             )
             for drug, score in results
         ]
@@ -205,7 +253,7 @@ class MySQLMatcher:
                 drug_info=drug,
                 score=score,
                 method="ngram",
-                evidence={"name_match": score, "source": "mysql_ngram"},
+                evidence={"name_match": score, "source": "mysql_fallback", "match_method": "mysql_ngram"},
             )
             for drug, score in results
         ]
@@ -236,7 +284,8 @@ class MySQLMatcher:
                             "name_match": round(score, 3),
                             "ratio": round(ratio, 3),
                             "partial_ratio": round(partial, 3),
-                            "source": "mysql_fuzzy",
+                            "source": "mysql_fallback",
+                            "match_method": "mysql_fuzzy",
                         },
                     )
                 )
