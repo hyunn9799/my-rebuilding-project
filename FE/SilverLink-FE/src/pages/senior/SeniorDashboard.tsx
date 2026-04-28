@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { NoticePopup } from "@/components/notice/NoticePopup";
+import ocrApi from "@/api/ocr";
 import {
   Heart,
   Phone,
@@ -28,16 +29,25 @@ import {
 
 const SeniorDashboard = () => {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [fontSize, setFontSize] = useState(18);
   const [isEmergencyOpen, setIsEmergencyOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [pendingOcrCount, setPendingOcrCount] = useState(0);
 
   // Update time every minute
   useState(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(timer);
   });
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    ocrApi.getPendingConfirmations(user.id)
+      .then((items) => setPendingOcrCount(items.length))
+      .catch(() => setPendingOcrCount(0));
+  }, [user?.id]);
 
   const handleEmergencyCall = () => {
     setIsEmergencyOpen(true);
@@ -226,7 +236,12 @@ const SeniorDashboard = () => {
                 onClick={item.action}
                 className="block"
               >
-                <Card className="h-full hover:shadow-lg transition-all duration-200 active:scale-95">
+                <Card className="relative h-full hover:shadow-lg transition-all duration-200 active:scale-95">
+                  {item.id === "ocr" && pendingOcrCount > 0 && (
+                    <span className="absolute right-3 top-3 rounded-full bg-destructive px-3 py-1 text-xs font-bold text-destructive-foreground">
+                      확인할 약 {pendingOcrCount}건
+                    </span>
+                  )}
                   <CardContent className="p-6 flex flex-col items-center text-center gap-4">
                     <div className={`w-20 h-20 rounded-2xl ${item.color} text-primary-foreground flex items-center justify-center`}>
                       {item.icon}

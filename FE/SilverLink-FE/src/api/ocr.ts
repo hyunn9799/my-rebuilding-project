@@ -1,26 +1,70 @@
 import apiClient from './index';
 
-/**
- * OCR API 모듈
- * 백엔드: OcrController (/api/ocr)
- */
-
 export interface OcrDocumentResponse {
-    text?: string;  // 추출된 텍스트
-    medication?: {  // 복약 정보 (약봉투 인식 시)
+    text?: string;
+    medication?: {
         name?: string;
         dosage?: string;
         times?: string[];
         instructions?: string;
     };
-    raw?: any;  // 원본 응답
+    raw?: any;
 }
 
-/**
- * 문서 이미지 OCR 분석
- * POST /api/ocr/document-ai
- * @param imageFile 이미지 파일
- */
+export interface MedicationCandidate {
+    medication_name: string;
+    dosage?: string;
+    times: string[];
+    instructions?: string;
+    confidence: number;
+    category?: string;
+    item_seq?: string;
+    entp_name?: string;
+    match_score?: number;
+    match_method?: string;
+    purpose?: string;
+    caution?: string;
+    evidence?: Record<string, unknown>;
+    validation_messages?: string[];
+}
+
+export interface MedicationValidationResult {
+    success: boolean;
+    medications: MedicationCandidate[];
+    raw_ocr_text: string;
+    llm_analysis?: string;
+    warnings: string[];
+    error_message?: string;
+    decision_status?: string;
+    match_confidence?: number;
+    requires_user_confirmation?: boolean;
+    decision_reasons?: string[];
+    request_id?: string;
+}
+
+export interface ConfirmMedicationRequest {
+    requestId: string;
+    selectedItemSeq: string;
+    confirmed: boolean;
+}
+
+export interface ConfirmMedicationResponse {
+    success: boolean;
+    message: string;
+    alias_suggestion_created?: boolean;
+}
+
+export interface PendingConfirmationItem {
+    request_id: string;
+    raw_ocr_text: string;
+    decision_status: string;
+    match_confidence: number;
+    best_drug_name?: string;
+    best_drug_item_seq?: string;
+    candidates: Record<string, unknown>[];
+    created_at?: string;
+}
+
 export const analyzeDocument = async (imageFile: File): Promise<OcrDocumentResponse> => {
     const formData = new FormData();
     formData.append('file', imageFile);
@@ -29,23 +73,16 @@ export const analyzeDocument = async (imageFile: File): Promise<OcrDocumentRespo
         headers: {
             'Content-Type': 'multipart/form-data',
         },
-        timeout: 60000, // OCR은 처리 시간이 오래 걸릴 수 있으므로 60초로 설정
+        timeout: 60000,
     });
 
-    // Luxia AI 응답 파싱
     const rawData = response.data;
-
-    // text 필드 추출 (응답 구조에 따라 조정 필요)
     let extractedText = '';
     let medication = undefined;
 
-    // 응답이 문자열인 경우
     if (typeof rawData === 'string') {
         extractedText = rawData;
-    }
-    // 응답이 객체인 경우
-    else if (rawData) {
-        // 여러 가지 가능한 필드 이름 시도
+    } else if (rawData) {
         extractedText = rawData.text
             || rawData.content
             || rawData.result
@@ -53,7 +90,6 @@ export const analyzeDocument = async (imageFile: File): Promise<OcrDocumentRespo
             || rawData.ocr_text
             || (typeof rawData === 'object' ? JSON.stringify(rawData, null, 2) : String(rawData));
 
-        // 약봉투 분석 결과가 있는 경우
         if (rawData.medication || rawData.medicine) {
             const med = rawData.medication || rawData.medicine;
             medication = {
@@ -72,11 +108,32 @@ export const analyzeDocument = async (imageFile: File): Promise<OcrDocumentRespo
     };
 };
 
-/**
- * Base64 이미지를 File로 변환
- */
+export const validateMedicationOCR = async (
+    ocrText: string,
+    elderlyUserId?: number,
+): Promise<MedicationValidationResult> => {
+    const response = await apiClient.post<MedicationValidationResult>('/api/ocr/validate-medication', {
+        ocrText,
+        elderlyUserId,
+    });
+    return response.data;
+};
+
+export const confirmMedication = async (
+    request: ConfirmMedicationRequest,
+): Promise<ConfirmMedicationResponse> => {
+    const response = await apiClient.post<ConfirmMedicationResponse>('/api/ocr/confirm-medication', request);
+    return response.data;
+};
+
+export const getPendingConfirmations = async (
+    elderlyUserId: number,
+): Promise<PendingConfirmationItem[]> => {
+    const response = await apiClient.get<PendingConfirmationItem[]>(`/api/ocr/pending-confirmations/${elderlyUserId}`);
+    return response.data;
+};
+
 export const base64ToFile = (base64String: string, fileName: string = 'image.jpg'): File => {
-    // data:image/jpeg;base64,... 형식에서 순수 base64 추출
     const parts = base64String.split(',');
     const mimeMatch = parts[0].match(/:(.*?);/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
@@ -94,5 +151,8 @@ export const base64ToFile = (base64String: string, fileName: string = 'image.jpg
 
 export default {
     analyzeDocument,
+    validateMedicationOCR,
+    confirmMedication,
+    getPendingConfirmations,
     base64ToFile,
 };

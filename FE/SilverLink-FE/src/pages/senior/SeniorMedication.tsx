@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import medicationsApi, { MedicationResponse, MedicationRequest } from "@/api/medications";
 import ocrApi from "@/api/ocr";
 import { getErrorMessage } from "@/utils/errorUtils";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Medication {
   id: number;
@@ -231,6 +232,7 @@ const generateSpeechText = (medication: Partial<Medication>, timeLabels: string)
 
 const SeniorMedication = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // States
@@ -243,6 +245,7 @@ const SeniorMedication = () => {
   const [showOCRConfirmDialog, setShowOCRConfirmDialog] = useState(false);
   const [ocrResult, setOcrResult] = useState<Partial<Medication> | null>(null);
   const [isSpeakingOCR, setIsSpeakingOCR] = useState(false);
+  const [pendingOcrCount, setPendingOcrCount] = useState(0);
 
   // New medication form states
   const [newMedName, setNewMedName] = useState("");
@@ -267,6 +270,14 @@ const SeniorMedication = () => {
     };
     fetchMedications();
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    ocrApi.getPendingConfirmations(user.id)
+      .then((items) => setPendingOcrCount(items.length))
+      .catch(() => setPendingOcrCount(0));
+  }, [user?.id]);
 
   const handleCameraCapture = () => {
     if (fileInputRef.current) {
@@ -579,7 +590,12 @@ const SeniorMedication = () => {
 
       <main className="p-6 space-y-6">
         {/* 약봉투 촬영 안내 카드 */}
-        <Card className="bg-info/5 border-info/20">
+        <Card className="relative bg-info/5 border-info/20">
+          {pendingOcrCount > 0 && (
+            <span className="absolute right-3 top-3 rounded-full bg-destructive px-3 py-1 text-xs font-bold text-destructive-foreground">
+              확인할 약 {pendingOcrCount}건
+            </span>
+          )}
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">

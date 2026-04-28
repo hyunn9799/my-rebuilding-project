@@ -40,7 +40,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import ocrApi from "@/api/ocr";
-import apiClient from "@/api";
 import medicationsApi, { MedicationRequest } from "@/api/medications";
 import { getErrorMessage } from "@/utils/errorUtils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -72,6 +71,7 @@ interface ValidationResult {
   match_confidence?: number;
   requires_user_confirmation?: boolean;
   decision_reasons?: string[];
+  request_id?: string;
 }
 
 // 약 카테고리 매핑
@@ -113,6 +113,8 @@ const SeniorOCR = () => {
 
   // OCR 결과 확인 모달
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [selectedCandidateIndex, setSelectedCandidateIndex] = useState(0);
+  const [isConfirmingMedication, setIsConfirmingMedication] = useState(false);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -197,6 +199,7 @@ const SeniorOCR = () => {
 
         if (validationResponse.success && validationResponse.medications.length > 0) {
           setExtractedMedications(validationResponse.medications);
+          setSelectedCandidateIndex(0);
 
           // 경고 메시지 표시
           if (validationResponse.warnings.length > 0) {
@@ -267,13 +270,7 @@ const SeniorOCR = () => {
 
   // LLM 검증 API 호출 (Spring Boot 프록시 경유)
   const validateMedicationOCR = async (ocrText: string): Promise<ValidationResult> => {
-    // apiClient를 통해 요청 (baseURL 및 인증 처리 일관성)
-    const response = await apiClient.post('/api/ocr/validate-medication', {
-      ocrText: ocrText,
-      elderlyUserId: user?.id || 0,
-    });
-
-    return response.data;
+    return ocrApi.validateMedicationOCR(ocrText, user?.id);
   };
 
   // OCR 텍스트 정제 함수
@@ -443,23 +440,69 @@ const SeniorOCR = () => {
     setExtractedMedications([]);
     setSelectedMedications(new Set());
     setValidationResult(null);
+    setSelectedCandidateIndex(0);
     setImageStats(null);
     setProcessingStage('loading');
   };
 
-  const handleOpenMedicationDialog = () => {
+  const getSelectedCandidate = (): MedicationInfo | undefined => {
+    return extractedMedications[selectedCandidateIndex] || extractedMedications[0];
+  };
+
+  const submitMedicationConfirmation = async (confirmed: boolean): Promise<boolean> => {
+    const requestId = validationResult?.request_id;
+    const candidate = getSelectedCandidate();
+
+    if (!requestId) {
+      toast.warning("OCR 결과 ID가 없어 후보 확정 기록은 저장하지 못했어요.");
+      return true;
+    }
+
+    if (!candidate?.item_seq) {
+      toast.warning("선택한 후보에 약품 코드가 없어 확정할 수 없어요.");
+      return false;
+    }
+
+    try {
+      setIsConfirmingMedication(true);
+      const response = await ocrApi.confirmMedication({
+        requestId,
+        selectedItemSeq: candidate.item_seq,
+        confirmed,
+      });
+
+      if (!response.success) {
+        toast.error(response.message || "OCR 후보 확정 처리에 실패했어요.");
+        return false;
+      }
+
+      if (response.alias_suggestion_created) {
+        toast.success("확정 결과를 학습 후보로 저장했어요.");
+      }
+      return true;
+    } catch (error: any) {
+      const message = error?.response?.data?.message || error?.message || "OCR 후보 확정 처리에 실패했어요.";
+      toast.error(message);
+      return false;
+    } finally {
+      setIsConfirmingMedication(false);
+    }
+  };
+
+  const handleOpenMedicationDialog = (medicationsToRegister: MedicationInfo[] = extractedMedications) => {
     // 모든 약을 기본 선택
-    const allMedNames = extractedMedications.map(m => m.medication_name);
+    const allMedNames = medicationsToRegister.map(m => m.medication_name);
     setSelectedMedications(new Set(allMedNames));
 
     // 각 약의 LLM 추천 시간을 기본값으로 설정
     const initialTimes: Record<string, string[]> = {};
-    extractedMedications.forEach(med => {
+    medicationsToRegister.forEach(med => {
       initialTimes[med.medication_name] = med.times.length > 0
         ? med.times
         : ["morning", "evening"];
     });
     setSelectedTimes(initialTimes);
+    setExtractedMedications(medicationsToRegister);
 
     setShowMedicationDialog(true);
   };
@@ -842,7 +885,7 @@ const SeniorOCR = () => {
                   </div>
 
                   <Button
-                    onClick={handleOpenMedicationDialog}
+                    onClick={() => handleOpenMedicationDialog()}
                     className="w-full h-16 text-lg font-bold rounded-2xl gap-3"
                     size="lg"
                   >
@@ -1042,12 +1085,29 @@ const SeniorOCR = () => {
                 return (
                   <div
                     key={idx}
-                    className="p-3 bg-muted/50 rounded-lg border"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedCandidateIndex(idx)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        setSelectedCandidateIndex(idx);
+                      }
+                    }}
+                    className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                      selectedCandidateIndex === idx
+                        ? "bg-info/10 border-info"
+                        : "bg-muted/50 hover:bg-muted"
+                    }`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="font-bold">{med.medication_name}</span>
+                          {selectedCandidateIndex === idx && (
+                            <Badge variant="outline" className="text-xs bg-info/10 border-info text-info">
+                              선택됨
+                            </Badge>
+                          )}
                           <Badge
                             variant="outline"
                             className={`text-xs ${categoryInfo.color}`}
@@ -1090,23 +1150,32 @@ const SeniorOCR = () => {
 
           <DialogFooter className="flex flex-col gap-3 sm:flex-col">
             <Button
-              onClick={() => {
+              onClick={async () => {
+                const confirmed = await submitMedicationConfirmation(true);
+                if (!confirmed) return;
+                const selectedCandidate = getSelectedCandidate();
                 setShowConfirmDialog(false);
-                handleOpenMedicationDialog();
+                handleOpenMedicationDialog(selectedCandidate ? [selectedCandidate] : extractedMedications);
               }}
               className="w-full h-14 text-lg font-bold bg-info hover:bg-info/90"
-              disabled={extractedMedications.length === 0}
+              disabled={extractedMedications.length === 0 || isConfirmingMedication}
             >
-              <Check className="w-6 h-6 mr-2" />
+              {isConfirmingMedication ? (
+                <Loader2 className="w-6 h-6 mr-2 animate-spin" />
+              ) : (
+                <Check className="w-6 h-6 mr-2" />
+              )}
               네, 맞아요
             </Button>
             <Button
               variant="outline"
-              onClick={() => {
+              onClick={async () => {
+                await submitMedicationConfirmation(false);
                 setShowConfirmDialog(false);
                 handleReset();
               }}
               className="w-full h-14 text-lg font-bold"
+              disabled={isConfirmingMedication}
             >
               <RotateCcw className="w-6 h-6 mr-2" />
               아니요, 다시 찍을게요

@@ -49,11 +49,11 @@ OCR_ERROR_MAP: Dict[str, List[str]] = {
 
 def _get_connection():
     return pymysql.connect(
-        host=configs.MYSQL_HOST,
-        port=configs.MYSQL_PORT,
-        user=configs.MYSQL_USER,
-        password=configs.MYSQL_PASSWORD,
-        database=configs.MYSQL_DATABASE,
+        host=configs.RDS_HOST,
+        port=configs.RDS_PORT,
+        user=configs.RDS_USER,
+        password=configs.RDS_PASSWORD,
+        database=configs.RDS_DATABASE,
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
     )

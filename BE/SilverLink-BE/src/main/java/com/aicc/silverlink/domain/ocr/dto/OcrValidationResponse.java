@@ -21,6 +21,9 @@ public class OcrValidationResponse {
     private Boolean success;
     private List<MedicationInfo> medications;
 
+    @JsonProperty("request_id")
+    private String requestId;
+
     @JsonProperty("raw_ocr_text")
     private String rawOcrText;
 
