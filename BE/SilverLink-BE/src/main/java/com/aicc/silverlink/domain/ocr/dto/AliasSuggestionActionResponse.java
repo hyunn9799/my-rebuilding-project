@@ -20,4 +20,10 @@ public class AliasSuggestionActionResponse {
 
     @JsonProperty("target_table")
     private String targetTable;
+
+    @JsonProperty("reload_success")
+    private Boolean reloadSuccess;
+
+    @JsonProperty("reload_warning")
+    private String reloadWarning;
 }

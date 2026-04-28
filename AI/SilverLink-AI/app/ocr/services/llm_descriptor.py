@@ -79,7 +79,7 @@ class LLMDescriptor:
 - 업체: {drug.entp_name or '정보 없음'}
 - 성분: {drug.item_ingr_name or '정보 없음'}
 - 전문/일반: {drug.spclty_pblc or '정보 없음'}
-- 효능효과: {(drug.efcy_qesitm or '정보 없음')[:300]}
+- 효능효과: {(drug.efcy_qesitm or '(주의: 공식 효능 정보가 DB에 제공되지 않았습니다. 성분이나 제형으로 효능을 임의로 유추하거나 지어내지 마세요.)')[:300]}
 - 사용법: {(drug.use_method_qesitm or '정보 없음')[:300]}
 - 주의사항: {(drug.atpn_qesitm or '정보 없음')[:300]}
 - 매칭 신뢰도: {c.score}
@@ -180,7 +180,7 @@ class LLMDescriptor:
                 "instructions": drug.use_method_qesitm[:200] if drug.use_method_qesitm else None,
                 "purpose": (
                     drug.efcy_qesitm[:200] if drug.efcy_qesitm
-                    else (f"성분: {drug.item_ingr_name}" if drug.item_ingr_name else None)
+                    else (f"성분({drug.item_ingr_name}) 확인됨 - 정확한 효능은 의사/약사와 상담하세요." if drug.item_ingr_name else None)
                 ),
                 "caution": drug.atpn_qesitm[:200] if drug.atpn_qesitm else None,
             })

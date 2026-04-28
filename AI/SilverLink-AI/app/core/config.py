@@ -125,6 +125,9 @@ class Configs(BaseSettings):
         "DRUG_API_ENDPOINT",
         "https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07"
     )
+    DRUG_API_OPERATION: str = os.getenv("DRUG_API_OPERATION", "/getDrugPrdtPrmsnInq07")
+    DRUG_API_NUM_ROWS: int = int(os.getenv("DRUG_API_NUM_ROWS", "100"))
+    DRUG_API_RESPONSE_TYPE: str = os.getenv("DRUG_API_RESPONSE_TYPE", "json")
     CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
     DRUG_COLLECTION_NAME: str = os.getenv("DRUG_COLLECTION_NAME", "drug_embeddings")
     DRUG_MATCH_THRESHOLD: float = float(os.getenv("DRUG_MATCH_THRESHOLD", "0.7"))

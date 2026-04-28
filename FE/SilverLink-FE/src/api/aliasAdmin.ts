@@ -31,6 +31,8 @@ export interface AliasSuggestionActionResponse {
     success: boolean;
     message: string;
     target_table?: string;
+    reload_success?: boolean;
+    reload_warning?: string;
 }
 
 // ── API ──

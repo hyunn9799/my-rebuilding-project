@@ -78,7 +78,11 @@ const AliasManagement = () => {
         user?.name || "admin",
       );
       if (result.success) {
-        toast.success(result.message);
+        if (result.reload_success === false) {
+            toast.warning(result.reload_warning || "사전 리로드 실패. 서버에서 확인해주세요.");
+        } else {
+            toast.success(result.message);
+        }
         fetchData(data.page);
       } else {
         toast.error(result.message);
