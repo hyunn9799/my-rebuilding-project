@@ -20,12 +20,15 @@ from app.queue.dlq_handler import DLQHandler
 # OCR 파이프라인 신규 모듈
 from app.ocr.repository.drug_repository import DrugRepository
 from app.ocr.repository.drug_vector_repository import DrugVectorRepository
+from app.ocr.repository.ocr_result_repository import OcrResultRepository
+from app.ocr.repository.alias_suggestion_repository import AliasSuggestionRepository
 from app.ocr.services.text_normalizer import TextNormalizer
 from app.ocr.services.mysql_matcher import MySQLMatcher
 from app.ocr.services.drug_dictionary_index import DrugDictionaryIndex
 from app.ocr.services.vector_matcher import VectorMatcher
 from app.ocr.services.rule_validator import RuleValidator
 from app.ocr.services.llm_descriptor import LLMDescriptor
+from app.ocr.services.llm_extractor import LLMExtractor
 from app.ocr.services.medication_pipeline import MedicationPipeline
 
 
@@ -87,6 +90,14 @@ class Container(containers.DeclarativeContainer):
     )
     rule_validator = providers.Factory(RuleValidator)
     llm_descriptor = providers.Factory(LLMDescriptor, llm=llm)
+
+    # Phase 5: OCR 결과 저장 + 사용자 확인
+    ocr_result_repository = providers.Factory(OcrResultRepository)
+    alias_suggestion_repository = providers.Factory(AliasSuggestionRepository)
+
+    # Phase 6: LLM 구조화 추출
+    llm_extractor = providers.Factory(LLMExtractor, llm=llm)
+
     medication_pipeline = providers.Factory(
         MedicationPipeline,
         text_normalizer=text_normalizer,
@@ -94,6 +105,8 @@ class Container(containers.DeclarativeContainer):
         vector_matcher=vector_matcher,
         rule_validator=rule_validator,
         llm_descriptor=llm_descriptor,
+        ocr_result_repo=ocr_result_repository,
+        llm_extractor=llm_extractor,
     )
 
     # SQS Worker & DLQ Handler

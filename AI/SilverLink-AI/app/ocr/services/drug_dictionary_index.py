@@ -6,6 +6,7 @@ used to build or refresh this structure.
 from __future__ import annotations
 
 import re
+import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field
@@ -74,17 +75,27 @@ class AliasSummary:
 
 
 class DrugDictionaryIndex:
-    """Local memory index for exact, alias, error alias, ngram and limited fuzzy lookup."""
+    """Local memory index for exact, alias, error alias, ngram and limited fuzzy lookup.
+
+    TODO (Phase 4-B / 향후):
+        - reload_dictionary_index(): 운영 중 인덱스 갱신 (atomic swap 완료, 트리거 미구현)
+        - prefix lookup: sorted list 또는 prefix_map 기반 전방 일치 (현재 ngram이 대체)
+    """
 
     NGRAM_SIZE = 2
     DEFAULT_LIMIT = 10
     FUZZY_POOL_LIMIT = 50
+    _load_lock = threading.Lock()
 
     def __init__(self, drug_repository=None):
         self.repo = drug_repository
         self._loaded = False
         self._load_failed = False
         self.loaded_at: Optional[float] = None
+
+        # _current holds the fully-built index reference.
+        # match() reads from _current so that a partial swap never occurs.
+        self._current: Optional[DrugDictionaryIndex] = None
 
         self.exact_map: Dict[str, List[str]] = {}
         self.alias_map: Dict[str, List[AliasSummary]] = {}
@@ -94,7 +105,7 @@ class DrugDictionaryIndex:
 
     @property
     def loaded(self) -> bool:
-        return self._loaded and bool(self.drug_summary_map)
+        return self._loaded and (self._current is not None or bool(self.drug_summary_map))
 
     @property
     def load_failed(self) -> bool:
@@ -107,34 +118,41 @@ class DrugDictionaryIndex:
             self._load_failed = True
             return False
 
-        started = time.perf_counter()
-        try:
-            medications = self.repo.fetch_all_medications_for_index()
-            aliases = self.repo.fetch_all_aliases_for_index()
-            error_aliases = self.repo.fetch_all_error_aliases_for_index()
-            new_index = self.build(medications, aliases, error_aliases)
-            self.exact_map = new_index.exact_map
-            self.alias_map = new_index.alias_map
-            self.error_alias_map = new_index.error_alias_map
-            self.ngram_index = new_index.ngram_index
-            self.drug_summary_map = new_index.drug_summary_map
-            self.loaded_at = time.time()
-            self._loaded = True
-            self._load_failed = False
-            elapsed_ms = (time.perf_counter() - started) * 1000
-            logger.info(
-                "Drug dictionary index loaded: drugs={}, aliases={}, error_aliases={}, ngram_tokens={}, elapsed_ms={:.1f}",
-                len(self.drug_summary_map),
-                sum(len(v) for v in self.alias_map.values()),
-                sum(len(v) for v in self.error_alias_map.values()),
-                len(self.ngram_index),
-                elapsed_ms,
-            )
-            return self.loaded
-        except Exception as exc:
-            self._load_failed = True
-            logger.warning("Drug dictionary index load failed; using MySQL fallback: {}", exc)
-            return False
+        with self._load_lock:
+            # Double-check after acquiring lock
+            if self.loaded:
+                return True
+
+            started = time.perf_counter()
+            try:
+                medications = self.repo.fetch_all_medications_for_index()
+                aliases = self.repo.fetch_all_aliases_for_index()
+                error_aliases = self.repo.fetch_all_error_aliases_for_index()
+                new_index = self.build(medications, aliases, error_aliases)
+                # Atomic swap: assign fully-built index in one reference update
+                self._current = new_index
+                self.exact_map = new_index.exact_map
+                self.alias_map = new_index.alias_map
+                self.error_alias_map = new_index.error_alias_map
+                self.ngram_index = new_index.ngram_index
+                self.drug_summary_map = new_index.drug_summary_map
+                self.loaded_at = time.time()
+                self._loaded = True
+                self._load_failed = False
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                logger.info(
+                    "Drug dictionary index loaded: drugs={}, aliases={}, error_aliases={}, ngram_tokens={}, elapsed_ms={:.1f}",
+                    len(new_index.drug_summary_map),
+                    sum(len(v) for v in new_index.alias_map.values()),
+                    sum(len(v) for v in new_index.error_alias_map.values()),
+                    len(new_index.ngram_index),
+                    elapsed_ms,
+                )
+                return self.loaded
+            except Exception as exc:
+                self._load_failed = True
+                logger.warning("Drug dictionary index load failed; using MySQL fallback: {}", exc)
+                return False
 
     @classmethod
     def build(
@@ -170,11 +188,14 @@ class DrugDictionaryIndex:
         if not self.ensure_loaded():
             return MatchResult(method="local_unavailable")
 
-        candidates = self.lookup_exact(query)
+        # Use _current snapshot if available, to avoid partial-swap reads
+        idx = self._current if self._current is not None else self
+
+        candidates = idx.lookup_exact(query)
         if candidates and candidates[0].score >= threshold:
             return MatchResult(candidates=candidates, best_score=candidates[0].score, method="exact")
 
-        candidates = self.lookup_alias(query)
+        candidates = idx.lookup_alias(query)
         alias_conflict = self._has_conflict(candidates)
         if candidates and candidates[0].score >= threshold:
             return MatchResult(
@@ -184,7 +205,7 @@ class DrugDictionaryIndex:
                 alias_conflict=alias_conflict,
             )
 
-        candidates = self.lookup_error_alias(query)
+        candidates = idx.lookup_error_alias(query)
         error_conflict = self._has_conflict(candidates)
         alias_conflict = alias_conflict or error_conflict
         if candidates and candidates[0].score >= threshold:
@@ -195,8 +216,8 @@ class DrugDictionaryIndex:
                 alias_conflict=alias_conflict,
             )
 
-        candidate_pool = self.lookup_ngram(query)
-        fuzzy_candidates = self.lookup_fuzzy(query, candidate_pool)
+        candidate_pool = idx.lookup_ngram(query)
+        fuzzy_candidates = idx.lookup_fuzzy(query, candidate_pool)
 
         merged = self._deduplicate([*candidate_pool, *fuzzy_candidates])
         best = merged[0] if merged else None

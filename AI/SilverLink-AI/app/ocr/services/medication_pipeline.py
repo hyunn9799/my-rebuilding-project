@@ -3,6 +3,7 @@ OCR 약 식별 파이프라인 오케스트레이터
 7단계: OCR → 정규화 → MySQL 1차 → VectorDB 2차 → 규칙 검증 → Pseudo-Confidence → LLM 설명
 """
 import time
+import uuid
 from typing import Any, List, Optional, Tuple
 from loguru import logger
 
@@ -48,6 +49,8 @@ class MedicationPipeline:
         llm_descriptor: LLMDescriptor,
         pseudo_confidence_scorer: Optional[PseudoConfidenceScorer] = None,
         match_threshold: Optional[float] = None,
+        ocr_result_repo: Optional[Any] = None,
+        llm_extractor: Optional[Any] = None,
     ):
         self.normalizer = text_normalizer
         self.mysql_matcher = mysql_matcher
@@ -56,6 +59,8 @@ class MedicationPipeline:
         self.llm_descriptor = llm_descriptor
         self.scorer = pseudo_confidence_scorer or PseudoConfidenceScorer()
         self.threshold = match_threshold or configs.DRUG_MATCH_THRESHOLD
+        self.ocr_result_repo = ocr_result_repo
+        self.llm_extractor = llm_extractor
 
     async def process(
         self,
@@ -108,12 +113,53 @@ class MedicationPipeline:
                 )
 
             # ──────────────────────────────────
+            # Stage 2.5: Optional LLM Structured Extraction
+            # ──────────────────────────────────
+            if self.llm_extractor:
+                t0 = time.perf_counter()
+                try:
+                    llm_candidates = await self.llm_extractor.extract(ocr_text)
+                    # 기존 정규화 결과에 없는 후보만 merge
+                    existing_names = {nd.name.lower() for nd in normalized_drugs}
+                    new_from_llm = [
+                        c for c in llm_candidates
+                        if c.name.lower() not in existing_names
+                    ]
+                    normalized_drugs.extend(new_from_llm)
+                    stage_ms = (time.perf_counter() - t0) * 1000
+                    stages.append(PipelineStage(
+                        stage="llm_extraction",
+                        duration_ms=round(stage_ms, 2),
+                        result_summary=(
+                            f"LLM 추출 {len(llm_candidates)}개, "
+                            f"신규 merge {len(new_from_llm)}개, "
+                            f"총 후보 {len(normalized_drugs)}개"
+                        ),
+                    ))
+                    logger.info(
+                        f"LLM extraction: {len(llm_candidates)}개 추출, "
+                        f"{len(new_from_llm)}개 신규 merge"
+                    )
+                except Exception as e:
+                    stage_ms = (time.perf_counter() - t0) * 1000
+                    stages.append(PipelineStage(
+                        stage="llm_extraction",
+                        duration_ms=round(stage_ms, 2),
+                        result_summary=f"LLM extraction 실패 (fallback): {e}",
+                    ))
+                    logger.warning(f"LLM extraction 실패, 기존 정규화 결과만 사용: {e}")
+
+            # ──────────────────────────────────
             # Stage 3: MySQL 다중 매칭 (1차)
             # ──────────────────────────────────
             t0 = time.perf_counter()
             mysql_results = {}
             for nd in normalized_drugs:
                 result = self.mysql_matcher.match(nd.name)
+                # LLM hint 출처 태깅 — 후보의 evidence에 출처 정보 기록
+                if nd.source == "llm_hint":
+                    for c in result.candidates:
+                        c.evidence["normalized_source"] = "llm_hint"
                 mysql_results[nd.name] = result
                 all_candidates.extend(result.candidates)
                 if result.alias_conflict:
@@ -241,10 +287,26 @@ class MedicationPipeline:
             # 최종 결과 조립
             # ──────────────────────────────────
             total_ms = (time.perf_counter() - pipeline_start) * 1000
+            request_id = str(uuid.uuid4())
 
             logger.info(
                 f"파이프라인 완료 — {len(final_candidates)}개 약품 식별, "
-                f"총 {total_ms:.0f}ms"
+                f"총 {total_ms:.0f}ms, request_id={request_id}"
+            )
+
+            # 비차단 결과 저장
+            self._save_result(
+                request_id=request_id,
+                elderly_user_id=elderly_user_id,
+                ocr_text=ocr_text,
+                normalized_drugs=normalized_drugs,
+                final_candidates=final_candidates,
+                stages=stages,
+                decision_status=decision_status,
+                match_confidence=match_confidence,
+                decision_reasons=decision_reasons,
+                llm_result=llm_result,
+                total_ms=total_ms,
             )
 
             return PipelineResult(
@@ -260,6 +322,7 @@ class MedicationPipeline:
                 match_confidence=match_confidence,
                 requires_user_confirmation=requires_confirmation,
                 decision_reasons=decision_reasons,
+                request_id=request_id,
             )
 
         except Exception as e:
@@ -311,6 +374,22 @@ class MedicationPipeline:
             )
             return "AMBIGUOUS", top.score, True, reasons
 
+        # VectorDB/RAG 단독 후보 guard — DB 검색이 아닌 벡터 유사도만으로
+        # 자동 확정하면 안 됨
+        top_source = top.evidence.get("source", "")
+        if top_source in ("vector_db", "vector_fallback"):
+            reasons.append(
+                f"VectorDB 후보만으로는 자동 확정하지 않습니다 (source={top_source})"
+            )
+            return "NEED_USER_CONFIRMATION", top.score, True, reasons
+
+        # LLM hint 단독 후보 guard — LLM 추출 후보만으로 자동 확정 금지
+        if top.evidence.get("normalized_source") == "llm_hint":
+            reasons.append(
+                "LLM 추출 후보만으로는 자동 확정하지 않습니다 (source=llm_hint)"
+            )
+            return "NEED_USER_CONFIRMATION", top.score, True, reasons
+
         low_ocr = [
             nd.ocr_confidence
             for nd in normalized_drugs
@@ -336,3 +415,51 @@ class MedicationPipeline:
 
         reasons.append("점수와 규칙 검증 기준을 통과했습니다.")
         return "MATCHED", top.score, False, reasons
+
+    def _save_result(
+        self,
+        request_id: str,
+        elderly_user_id: Optional[int],
+        ocr_text: str,
+        normalized_drugs: List[NormalizedDrug],
+        final_candidates: List[MatchCandidate],
+        stages: list,
+        decision_status: str,
+        match_confidence: float,
+        decision_reasons: List[str],
+        llm_result: dict,
+        total_ms: float,
+    ) -> None:
+        """비차단 OCR 결과 저장. 실패해도 파이프라인 응답에 영향 없음."""
+        if not self.ocr_result_repo:
+            return
+        try:
+            from app.ocr.model.ocr_result_model import OcrResultRecord
+
+            record = OcrResultRecord(
+                request_id=request_id,
+                elderly_user_id=elderly_user_id,
+                raw_ocr_text=ocr_text,
+                normalized_names=[nd.model_dump() for nd in normalized_drugs],
+                candidates=[c.model_dump() for c in final_candidates],
+                pipeline_stages=[s.model_dump() for s in stages],
+                decision_status=decision_status,
+                match_confidence=match_confidence,
+                decision_reasons=decision_reasons,
+                best_drug_item_seq=(
+                    final_candidates[0].drug_info.item_seq if final_candidates else None
+                ),
+                best_drug_name=(
+                    final_candidates[0].drug_info.item_name if final_candidates else None
+                ),
+                llm_description=llm_result.get("description", ""),
+                warnings=llm_result.get("warnings", []),
+                total_duration_ms=total_ms,
+            )
+            self.ocr_result_repo.save_result(record)
+        except Exception as exc:
+            logger.warning(
+                "OCR result save failed (non-blocking): request_id={}, error={}",
+                request_id,
+                exc,
+            )

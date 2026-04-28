@@ -1,0 +1,5343 @@
+﻿===== Admin.java =====
+package com.aicc.silverlink.domain.admin.entity;
+
+import com.aicc.silverlink.domain.system.entity.AdministrativeDivision;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+/**
+ * 愿由ъ옄 ?뷀떚??
+ * User ?뚯씠釉붽낵 1:1 愿怨?
+ * AdministrativeDivision怨?N:1 愿怨?
+ */
+
+
+@Entity
+@Table(name = "admin")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Admin {
+
+    @Id
+    @Column(name = "user_id")
+    private Long userId;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    // ?대떦 ?됱젙 援ъ뿭 - AdministrativeDivision怨?FK 愿怨?
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "adm_code", nullable = false)
+    private AdministrativeDivision administrativeDivision;
+
+    // 愿由ъ옄 ?덈꺼
+    @Enumerated(EnumType.STRING)
+    @Column(name = "admin_level", nullable = false)
+    private AdminLevel adminLevel;
+
+
+
+    @Builder
+    public Admin(User user, AdministrativeDivision administrativeDivision, AdminLevel adminLevel) {
+        this.user = user;
+        this.administrativeDivision = administrativeDivision;
+        this.adminLevel = adminLevel != null ? adminLevel : determineAdminLevel(administrativeDivision);
+
+    }
+
+    /**
+     * ?됱젙援ъ뿭 ?덈꺼濡?愿由ъ옄 ?덈꺼 ?먮룞 寃곗젙
+     */
+    private static AdminLevel determineAdminLevel(AdministrativeDivision division) {
+        if (division == null) {
+            return AdminLevel.DISTRICT;
+        }
+
+        return switch (division.getLevel()) {
+            case SIDO -> AdminLevel.PROVINCIAL;
+            case SIGUNGU -> AdminLevel.CITY;
+            case DONG -> AdminLevel.DISTRICT;
+        };
+    }
+
+    /**
+     * ?됱젙??肄붾뱶濡?愿由ъ옄 ?덈꺼 ?먮룞 寃곗젙 (?섏쐞 ?명솚??
+     */
+    private static AdminLevel determineAdminLevelByCode(Long admCode) {
+        if (admCode == null) {
+            return AdminLevel.DISTRICT;
+        }
+
+        String code = String.format("%010d", admCode);
+
+        // ?꾧뎅 愿由ъ옄 (00 0000 000 00)
+        if (admCode == 0L) {
+            return AdminLevel.NATIONAL;
+        }
+
+        // ?????덈꺼 (XX 0000 000 00)
+        if (code.substring(2).equals("00000000")) {
+            return AdminLevel.PROVINCIAL;
+        }
+
+        // ??援?援??덈꺼 (XX XX00 000 00)
+        if (code.substring(4).equals("000000")) {
+            return AdminLevel.CITY;
+        }
+
+        // ??硫????덈꺼
+        return AdminLevel.DISTRICT;
+    }
+
+    /**
+     * 愿由ъ옄 ?덈꺼 Enum
+     */
+    public enum AdminLevel {
+        NATIONAL("?꾧뎅", 0),      // 以묒븰 愿由ъ옄
+        PROVINCIAL("????, 2),   // ?쒖슱?밸퀎?? 寃쎄린????
+        CITY("??援?援?, 4),      // 媛뺣궓援? ?섏썝????
+        DISTRICT("??硫???, 7);  // ??궪????
+
+        private final String description;
+        private final int codeLength;  // ?좏슚??肄붾뱶 湲몄씠
+
+        AdminLevel(String description, int codeLength) {
+            this.description = description;
+            this.codeLength = codeLength;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public int getCodeLength() {
+            return codeLength;
+        }
+    }
+
+    /**
+     * ?몄쓽 硫붿꽌?? ?됱젙援ъ뿭 肄붾뱶 諛섑솚
+     */
+    public Long getAdmCode() {
+        return administrativeDivision != null ? administrativeDivision.getAdmCode() : null;
+    }
+
+    /**
+     * 鍮꾩쫰?덉뒪 濡쒖쭅: ?대떦 援ъ뿭 蹂寃?
+     */
+    public void updateAdministrativeDivision(AdministrativeDivision newDivision) {
+        this.administrativeDivision = newDivision;
+        this.adminLevel = determineAdminLevel(newDivision);
+    }
+
+    /**
+     * ?뱀젙 ?됱젙援ъ뿭????愿由ъ옄??愿??援ъ뿭?몄? ?뺤씤
+     */
+    public boolean hasJurisdiction(Long targetAdmCode) {
+        if (targetAdmCode == null) {
+            return false;
+        }
+
+        // ?꾧뎅 愿由ъ옄??紐⑤뱺 援ъ뿭 愿??
+        if (this.adminLevel == AdminLevel.NATIONAL) {
+            return true;
+        }
+
+        Long myAdmCode = getAdmCode();
+        if (myAdmCode == null) {
+            return false;
+        }
+
+        String myCode = String.format("%010d", myAdmCode);
+        String targetCode = String.format("%010d", targetAdmCode);
+
+        // ??肄붾뱶 湲몄씠留뚰겮 鍮꾧탳
+        int compareLength = this.adminLevel.getCodeLength();
+        if (compareLength == 0) {
+            return true;
+        }
+
+        return myCode.substring(0, compareLength)
+                .equals(targetCode.substring(0, compareLength));
+    }
+
+    /**
+     * ?뱀젙 ?됱젙援ъ뿭????愿由ъ옄??愿??援ъ뿭?몄? ?뺤씤 (AdministrativeDivision?쇰줈)
+     */
+    public boolean hasJurisdiction(AdministrativeDivision targetDivision) {
+        if (targetDivision == null) {
+            return false;
+        }
+        return hasJurisdiction(targetDivision.getAdmCode());
+    }
+
+    /**
+     * ?ㅻⅨ 愿由ъ옄媛 ???곸쐞 愿由ъ옄?몄? ?뺤씤
+     */
+    public boolean isSubordinateOf(Admin other) {
+        return other.hasJurisdiction(this.getAdmCode())
+                && this.adminLevel.ordinal() > other.adminLevel.ordinal();
+    }
+
+    /**
+     * ?ㅻⅨ 愿由ъ옄蹂대떎 ?곸쐞 ?덈꺼?몄? ?뺤씤
+     */
+    public boolean hasHigherLevelThan(Admin other) {
+        return this.adminLevel.ordinal() < other.adminLevel.ordinal();
+    }
+}
+
+===== OfflineRegistrationLog.java =====
+package com.aicc.silverlink.domain.admin.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "offline_registration_logs")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+@Builder
+public class OfflineRegistrationLog {
+
+    @Id
+    @Column(name = "reg_log_id")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "registrar_user_id", nullable = false)
+    private Long registrarUserId;
+
+    @Column(name = "target_user_id", nullable = false)
+    private Long targetUserId;
+
+    @Column(name = "channel", nullable = false)
+    private String channel; // CENTER_VISIT
+
+    @Column(name = "memo", length = 500)
+    private String memo;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+}
+
+
+===== Assignment.java =====
+package com.aicc.silverlink.domain.assignment.entity;
+
+import com.aicc.silverlink.domain.admin.entity.Admin;
+import com.aicc.silverlink.domain.counselor.entity.Counselor;
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "assignments")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@Builder
+public class Assignment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "assignment_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "counselor_user_id", nullable = false)
+    private Counselor counselor;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_by_admin_user_id", nullable = false)
+    private Admin assignedBy;
+
+    @Column(name = "assigned_at", nullable = false)
+    private LocalDateTime assignedAt;
+
+    @Column(name = "ended_at")
+    private LocalDateTime endedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private AssignmentStatus status;
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.assignedAt == null) {
+            this.assignedAt = LocalDateTime.now();
+        }
+        if (this.status == null) {
+            this.status = AssignmentStatus.ACTIVE;
+        }
+    }
+    public static Assignment create(Counselor counselor, Elderly elderly, Admin admin) {
+        return Assignment.builder()
+                .counselor(counselor)
+                .elderly(elderly)
+                .assignedBy(admin)
+                .status(AssignmentStatus.ACTIVE)
+                .assignedAt(LocalDateTime.now())
+                .build();
+    }
+
+    public void endAssignment()
+    {
+        this.status= AssignmentStatus.ENDED;
+        this.endedAt = LocalDateTime.now();
+    }}
+
+
+===== AssignmentStatus.java =====
+package com.aicc.silverlink.domain.assignment.entity;
+
+public enum AssignmentStatus {
+    ACTIVE, ENDED
+}
+
+
+===== AuditLog.java =====
+package com.aicc.silverlink.domain.audit.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "audit_logs")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor
+public class AuditLog {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "audit_log_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "actor_user_id")
+    private User actor;
+
+    @Column(name = "action", nullable = false, length = 100)
+    private String action;
+
+    @Column(name = "target_entity", length = 100)
+    private String targetEntity;
+
+    @Column(name = "target_id")
+    private Long targetId;
+
+    @Column(name = "ip_address", length = 45)
+    private String ipAddress;
+
+    @Column(name = "user_agent", length = 255)
+    private String userAgent;
+
+    @Column(name = "meta", columnDefinition = "JSON")
+    private String meta;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+}
+
+
+===== PhoneVerification.java =====
+package com.aicc.silverlink.domain.auth.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "phone_verifications")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class PhoneVerification {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "verification_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @Column(name = "phone_e164", nullable = false, length = 20)
+    private String phoneE164;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", nullable = false)
+    private Purpose purpose;
+
+    @Column(name = "code_hash", length = 255)
+    private String codeHash;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private Status status;
+
+    @Column(name = "expires_at", nullable = false)
+    private LocalDateTime expiresAt;
+
+    @Column(name = "verified_at")
+    private LocalDateTime verifiedAt;
+
+    @Column(name = "fail_count", nullable = false)
+    private int failCount;
+
+    @Column(name = "request_ip", length = 45)
+    private String requestIp;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Builder
+    private PhoneVerification(
+            User user,
+            String phoneE164,
+            Purpose purpose,
+            String codeHash,
+            LocalDateTime expiresAt,
+            String requestIp,
+            Status status,
+            int failCount) {
+        this.user = user;
+        this.phoneE164 = phoneE164;
+        this.purpose = purpose;
+        this.codeHash = codeHash;
+        this.expiresAt = expiresAt;
+        this.requestIp = requestIp;
+        this.failCount = failCount;
+        this.status = status;
+        this.failCount = 0;
+    }
+
+    public static PhoneVerification create(User user, String phoneE164, Purpose purpose, String codeHash,
+            String requestIp, long ttlSeconds) {
+        return PhoneVerification.builder()
+                .user(user)
+                .phoneE164(phoneE164)
+                .purpose(purpose)
+                // Twilio Verify API ?ъ슜 ??codeHash??null???????덉쓬 ???뚮젅?댁뒪??????
+                .codeHash(codeHash != null ? codeHash : "TWILIO_MANAGED")
+                .requestIp(requestIp)
+                .expiresAt(LocalDateTime.now().plusSeconds(ttlSeconds))
+                .build();
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = Status.REQUESTED;
+        }
+    }
+
+    public enum Purpose {
+        SIGNUP, DEVICE_REGISTRATION, PASSWORD_RESET
+    }
+
+    public enum Status {
+        REQUESTED, VERIFIED, EXPIRED, FAILED
+    }
+
+    public void increaseFailCount() {
+        this.failCount++;
+    }
+
+    public void verify() {
+        this.status = Status.VERIFIED;
+        this.verifiedAt = LocalDateTime.now();
+    }
+
+    public void expire() {
+        this.status = Status.EXPIRED;
+    }
+
+    public void fail() {
+        this.status = Status.FAILED;
+    }
+
+}
+
+
+===== WebAuthnCredential.java =====
+package com.aicc.silverlink.domain.auth.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "webauthn_credentials")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@Builder
+public class WebAuthnCredential {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "webauthn_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "credential_id", nullable = false, unique = true, length = 255)
+    private String credentialId;
+
+    @Column(name = "rp_id", nullable = false, length = 255)
+    private String rpId;
+
+    @Lob
+    @Column(name="public_key", columnDefinition="BLOB", nullable=false)
+    private byte[] publicKey;
+
+    @Column(name = "sign_count", nullable = false)
+    private long signCount;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "last_used_at")
+    private LocalDateTime lastUsedAt;
+
+    @Column(name = "revoked_at")
+    private LocalDateTime revokedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "registered_by")
+    private User registeredBy;
+
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        if (this.lastUsedAt == null) {
+            this.lastUsedAt = LocalDateTime.now(); // ?앹꽦 ?쒖젏???ъ슜?쇰줈 媛꾩＜
+        }
+    }
+
+    public static WebAuthnCredential register(User user, String credentialId, String rpId, byte[] publicKey, long signCount, User registeredBy) {
+        return WebAuthnCredential.builder()
+                .user(user)
+                .credentialId(credentialId)
+                .rpId(rpId)
+                .publicKey(publicKey)
+                .signCount(signCount)
+                .registeredBy(registeredBy)
+                .build();
+    }
+
+    public void updateUsage(long newSignCount) {
+        this.signCount = newSignCount;
+        this.lastUsedAt = LocalDateTime.now();
+    }
+}
+
+
+===== CallDailyStatus.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+/**
+ * ?듯솕蹂??쇱씪 ?곹깭 ?뷀떚??
+ * - ?앹궗, 嫄닿컯, ?섎㈃ ?곹깭 ???
+ */
+@Entity
+@Table(name = "call_daily_status",
+        indexes = {
+                @Index(name = "idx_daily_status_call", columnList = "call_id")
+        })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class CallDailyStatus {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "status_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "call_id", nullable = false, unique = true)
+    private CallRecord callRecord;
+
+    /**
+     * ?앹궗 ?щ? (吏곸쟾 ?앹궗瑜??덈뒗吏)
+     */
+    @Column(name = "meal_taken")
+    private Boolean mealTaken;
+
+    /**
+     * 嫄닿컯 ?곹깭
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "health_status", length = 20)
+    private StatusLevel healthStatus;
+
+    /**
+     * 嫄닿컯 ?곹깭 ?곸꽭 ?댁슜
+     */
+    @Column(name = "health_detail", columnDefinition = "TEXT")
+    private String healthDetail;
+
+    /**
+     * ?섎㈃ ?곹깭
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sleep_status", length = 20)
+    private StatusLevel sleepStatus;
+
+    /**
+     * ?섎㈃ ?곹깭 ?곸꽭 ?댁슜
+     */
+    @Column(name = "sleep_detail", columnDefinition = "TEXT")
+    private String sleepDetail;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    @Builder
+    public CallDailyStatus(CallRecord callRecord, Boolean mealTaken,
+                           StatusLevel healthStatus, String healthDetail,
+                           StatusLevel sleepStatus, String sleepDetail) {
+        this.callRecord = callRecord;
+        this.mealTaken = mealTaken;
+        this.healthStatus = healthStatus;
+        this.healthDetail = healthDetail;
+        this.sleepStatus = sleepStatus;
+        this.sleepDetail = sleepDetail;
+    }
+
+    /**
+     * ?곹깭 ?덈꺼 Enum
+     */
+    public enum StatusLevel {
+        GOOD("醫뗭쓬"),
+        NORMAL("蹂댄넻"),
+        BAD("?섏겏");
+
+        private final String korean;
+
+        StatusLevel(String korean) {
+            this.korean = korean;
+        }
+
+        public String getKorean() {
+            return korean;
+        }
+    }
+
+    // ===== 鍮꾩쫰?덉뒪 硫붿꽌??=====
+
+    public String getHealthStatusKorean() {
+        return healthStatus != null ? healthStatus.getKorean() : "誘명솗??;
+    }
+
+    public String getSleepStatusKorean() {
+        return sleepStatus != null ? sleepStatus.getKorean() : "誘명솗??;
+    }
+
+    public String getMealStatusKorean() {
+        if (mealTaken == null) return "誘명솗??;
+        return mealTaken ? "?앹궗?? : "?앹궗 ?덊븿";
+    }
+}
+
+===== CallEmotion.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+/**
+ * 媛먯젙 遺꾩꽍 寃곌낵 ?뷀떚??
+ */
+@Entity
+@Table(name = "call_emotions",
+        indexes = {
+                @Index(name = "idx_emotion_call_time", columnList = "call_id, created_at")
+        })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class CallEmotion {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "emotion_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "call_id", nullable = false)
+    private CallRecord callRecord;
+
+    /**
+     * 媛먯젙 ?덈꺼
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "emotion_level", nullable = false)
+    private EmotionLevel emotionLevel;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    @Builder
+    public CallEmotion(CallRecord callRecord, EmotionLevel emotionLevel) {
+        this.callRecord = callRecord;
+        this.emotionLevel = emotionLevel;
+    }
+
+    /**
+     * 媛먯젙 ?덈꺼 ?쒓?紐?諛섑솚
+     */
+    public String getEmotionLevelKorean() {
+        return emotionLevel != null ? emotionLevel.getKorean() : "誘명솗??;
+    }
+}
+
+===== CallRecord.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * ?듯솕 湲곕줉 ?뷀떚??
+ */
+@Entity
+@Table(name = "call_records",
+        indexes = {
+                @Index(name = "idx_call_records_elderly_time", columnList = "elderly_user_id, call_at"),
+                @Index(name = "idx_call_records_state_time", columnList = "state, call_at")
+        })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class CallRecord {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "call_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    @Column(name = "call_at", nullable = false)
+    private LocalDateTime callAt;
+
+    @Column(name = "call_time_sec", nullable = false)
+    private Integer callTimeSec;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private CallState state;
+
+    /**
+     * ?듯솕 ?뱀쓬 ?뚯씪 URL (S3)
+     */
+    @Column(name = "recording_url", length = 500)
+    private String recordingUrl;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    // ===== ?곌? 愿怨?=====
+
+    @OneToMany(mappedBy = "callRecord", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("createdAt ASC")
+    private List<LlmModel> llmModels = new ArrayList<>();
+
+    @OneToMany(mappedBy = "callRecord", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("respondedAt ASC")
+    private List<ElderlyResponse> elderlyResponses = new ArrayList<>();
+
+    @OneToMany(mappedBy = "callRecord", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("createdAt DESC")
+    private List<CallSummary> summaries = new ArrayList<>();
+
+    @OneToMany(mappedBy = "callRecord", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("createdAt DESC")
+    private List<CallEmotion> emotions = new ArrayList<>();
+
+    /**
+     * ?쇱씪 ?곹깭 (1:1 愿怨?
+     */
+    @OneToOne(mappedBy = "callRecord", cascade = CascadeType.ALL, orphanRemoval = true)
+    private CallDailyStatus dailyStatus;
+
+    @Builder
+    public CallRecord(Elderly elderly, LocalDateTime callAt, Integer callTimeSec,
+                      CallState state, String recordingUrl) {
+        this.elderly = elderly;
+        this.callAt = callAt;
+        this.callTimeSec = callTimeSec;
+        this.state = state;
+        this.recordingUrl = recordingUrl;
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+
+    // ===== 鍮꾩쫰?덉뒪 硫붿꽌??=====
+
+    /**
+     * ?듯솕 ?쒓컙??"MM遺?SS珥? ?뺤떇?쇰줈 諛섑솚
+     */
+    public String getFormattedDuration() {
+        if (callTimeSec == null || callTimeSec <= 0) {
+            return "0遺?0珥?;
+        }
+        int minutes = callTimeSec / 60;
+        int seconds = callTimeSec % 60;
+
+        if (minutes == 0) {
+            return seconds + "珥?;
+        } else if (seconds == 0) {
+            return minutes + "遺?;
+        }
+        return minutes + "遺?" + seconds + "珥?;
+    }
+
+    /**
+     * ?꾪뿕 ?묐떟???덈뒗吏 ?뺤씤
+     */
+    public boolean hasDangerResponse() {
+        return elderlyResponses.stream()
+                .anyMatch(ElderlyResponse::isDanger);
+    }
+
+    /**
+     * 理쒖떊 媛먯젙 遺꾩꽍 寃곌낵
+     */
+    public CallEmotion getLatestEmotion() {
+        return emotions.isEmpty() ? null : emotions.get(0);
+    }
+
+    /**
+     * 理쒖떊 ?듯솕 ?붿빟
+     */
+    public CallSummary getLatestSummary() {
+        return summaries.isEmpty() ? null : summaries.get(0);
+    }
+
+    /**
+     * ?듯솕 ?꾨즺 ?щ?
+     */
+    public boolean isCompleted() {
+        return this.state == CallState.COMPLETED;
+    }
+
+    /**
+     * ?뱀쓬 ?뚯씪 URL ?ㅼ젙
+     */
+    public void setRecordingUrl(String recordingUrl) {
+        this.recordingUrl = recordingUrl;
+    }
+
+    /**
+     * ?듯솕 ?쒓컙 ?ㅼ젙
+     */
+    public void setCallTimeSec(Integer callTimeSec) {
+        this.callTimeSec = callTimeSec;
+    }
+
+    /**
+     * ?듯솕 ?곹깭 蹂寃?
+     */
+    public void updateState(CallState state) {
+        this.state = state;
+    }
+
+    /**
+     * ?쇱씪 ?곹깭 ?ㅼ젙
+     */
+    public void setDailyStatus(CallDailyStatus dailyStatus) {
+        this.dailyStatus = dailyStatus;
+    }
+}
+
+===== CallState.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+/**
+ * ?듯솕 ?곹깭 Enum
+ */
+public enum CallState {
+    REQUESTED("?붿껌??),
+    ANSWERED("?묐떟??),
+    FAILED("?ㅽ뙣"),
+    COMPLETED("?꾨즺"),
+    CANCELLED("痍⑥냼??);
+
+    private final String korean;
+
+    CallState(String korean) {
+        this.korean = korean;
+    }
+
+    public String getKorean() {
+        return korean;
+    }
+}
+
+===== CallSummary.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+/**
+ * ?듯솕 ?붿빟 ?뷀떚??
+ */
+@Entity
+@Table(name = "call_summaries",
+        indexes = {
+                @Index(name = "idx_summary_call_time", columnList = "call_id, created_at")
+        })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class CallSummary {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "summary_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "call_id", nullable = false)
+    private CallRecord callRecord;
+
+    /**
+     * ?듯솕 ?붿빟 ?댁슜
+     */
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String content;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    @Builder
+    public CallSummary(CallRecord callRecord, String content) {
+        this.callRecord = callRecord;
+        this.content = content;
+    }
+}
+
+===== CounselorCallReview.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+import com.aicc.silverlink.domain.counselor.entity.Counselor;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+/**
+ * ?곷떞?ш? CallBot ?듯솕瑜??뺤씤?섍퀬 ?④릿 肄붾찘??
+ * - ?곷떞?ш? ?듯솕瑜??뺤씤?덉쓬??泥댄겕?섎뒗 ?⑸룄
+ * - 蹂댄샇?먯뿉寃??듯솕?????遺???ㅻ챸???쒓났
+ */
+@Entity
+@Table(name = "counselor_call_reviews",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"call_id", "counselor_user_id"}))
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@Builder
+public class CounselorCallReview {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "review_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "call_id", nullable = false)
+    private CallRecord callRecord;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "counselor_user_id", nullable = false)
+    private Counselor counselor;
+
+    @Column(name = "reviewed_at", nullable = false)
+    private LocalDateTime reviewedAt;
+
+    @Column(name = "comment", columnDefinition = "TEXT")
+    private String comment;
+
+    @Column(name = "is_urgent", nullable = false)
+    private boolean urgent;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        if (this.reviewedAt == null) {
+            this.reviewedAt = now;
+        }
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * ?곷떞???듯솕 由щ럭 ?앹꽦
+     */
+    public static CounselorCallReview create(CallRecord callRecord, Counselor counselor,
+                                             String comment, boolean urgent) {
+        if (callRecord == null) throw new IllegalArgumentException("?듯솕 湲곕줉? ?꾩닔?낅땲??");
+        if (counselor == null) throw new IllegalArgumentException("?곷떞???뺣낫???꾩닔?낅땲??");
+
+        return CounselorCallReview.builder()
+                .callRecord(callRecord)
+                .counselor(counselor)
+                .reviewedAt(LocalDateTime.now())
+                .comment(comment)
+                .urgent(urgent)
+                .build();
+    }
+
+    /**
+     * 肄붾찘???섏젙
+     */
+    public void updateComment(String comment, boolean urgent) {
+        this.comment = comment;
+        this.urgent = urgent;
+    }
+}
+
+===== ElderlyResponse.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+/**
+ * ?대Ⅴ???묐떟 ?뷀떚??
+ * - ?듯솕 以??대Ⅴ?좎씠 ??留?(STT 寃곌낵)
+ */
+@Entity
+@Table(name = "elderly_responses", indexes = {
+        @Index(name = "idx_elderly_responses_call_time", columnList = "call_id, responded_at"),
+        @Index(name = "idx_elderly_responses_model_time", columnList = "model_id, responded_at")
+})
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class ElderlyResponse {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "response_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "model_id", nullable = true)
+    private LlmModel llmModel;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "call_id", nullable = false)
+    private CallRecord callRecord;
+
+    /**
+     * ?대Ⅴ?좎씠 ??留?(STT 寃곌낵)
+     */
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String content;
+
+    @Column(name = "responded_at", nullable = false)
+    private LocalDateTime respondedAt;
+
+    /**
+     * ?꾪뿕 媛먯? ?щ?
+     */
+    @Column(nullable = false)
+    private boolean danger;
+
+    /**
+     * ?꾪뿕 媛먯? ?ъ쑀
+     */
+    @Column(name = "danger_reason", columnDefinition = "TEXT")
+    private String dangerReason;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.respondedAt == null) {
+            this.respondedAt = LocalDateTime.now();
+        }
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @Builder
+    public ElderlyResponse(LlmModel llmModel, CallRecord callRecord, String content,
+            LocalDateTime respondedAt, boolean danger, String dangerReason) {
+        this.llmModel = llmModel;
+        this.callRecord = callRecord;
+        this.content = content;
+        this.respondedAt = respondedAt != null ? respondedAt : LocalDateTime.now();
+        this.danger = danger;
+        this.dangerReason = dangerReason;
+    }
+
+    /**
+     * ?꾪뿕 ?щ? ?뺤씤
+     */
+    public boolean isDanger() {
+        return this.danger;
+    }
+}
+
+===== EmotionLevel.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+/**
+ * 媛먯젙 ?덈꺼 Enum
+ */
+public enum EmotionLevel {
+    GOOD("醫뗭쓬"),
+    NORMAL("蹂댄넻"),
+    BAD("?섏겏"),
+    DEPRESSED("?곗슱");
+
+    private final String korean;
+
+    EmotionLevel(String korean) {
+        this.korean = korean;
+    }
+
+    public String getKorean() {
+        return korean;
+    }
+}
+
+===== LlmModel.java =====
+package com.aicc.silverlink.domain.call.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+/**
+ * LLM 紐⑤뜽 ?ㅽ뻾 湲곕줉 (CallBot 諛쒗솕)
+ * - CallBot???대Ⅴ?좎뿉寃???吏덈Ц/留먯쓣 ???
+ */
+@Entity
+@Table(name = "llm_models",
+        indexes = {
+                @Index(name = "idx_models_call", columnList = "call_id, created_at")
+        })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class LlmModel {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "model_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "call_id", nullable = false)
+    private CallRecord callRecord;
+
+    /**
+     * CallBot???대Ⅴ?좎뿉寃???留?(?꾨＼?꾪듃/諛쒗솕)
+     */
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String prompt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    @Builder
+    public LlmModel(CallRecord callRecord, String prompt) {
+        this.callRecord = callRecord;
+        this.prompt = prompt;
+    }
+}
+
+===== Complaint.java =====
+package com.aicc.silverlink.domain.complaint.entity;
+
+import com.aicc.silverlink.domain.admin.entity.Admin;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "complaints")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Complaint {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "complaint_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "writer_user_id", nullable = false)
+    private User writer;
+
+    @Column(name = "title", nullable = false, length = 200)
+    private String title;
+
+    @Column(name = "content", nullable = false, columnDefinition = "TEXT")
+    private String content;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private ComplaintStatus status;
+
+    @Column(name = "reply_content", columnDefinition = "TEXT")
+    private String replyContent;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "replied_by_admin_id")
+    private Admin repliedBy;
+
+    @Column(name = "replied_at")
+    private LocalDateTime repliedAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @Builder
+    public Complaint(User writer, String title, String content) {
+        this.writer = writer;
+        this.title = title;
+        this.content = content;
+        this.status = ComplaintStatus.WAITING;
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = ComplaintStatus.WAITING;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 誘쇱썝 ?듬? ?묒꽦
+     */
+    public void reply(String replyContent, Admin admin) {
+        this.replyContent = replyContent;
+        this.repliedBy = admin;
+        this.repliedAt = LocalDateTime.now();
+        this.status = ComplaintStatus.RESOLVED;
+    }
+
+    /**
+     * 誘쇱썝 ?곹깭 蹂寃?
+     */
+    public void updateStatus(ComplaintStatus newStatus) {
+        this.status = newStatus;
+    }
+
+    public enum ComplaintStatus {
+        WAITING, PROCESSING, RESOLVED, REJECTED
+    }
+}
+
+
+===== AccessRequest.java =====
+package com.aicc.silverlink.domain.consent.entity;
+
+import com.aicc.silverlink.domain.admin.entity.Admin;
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+/**
+ * 誘쇨컧?뺣낫 ?묎렐 沅뚰븳 ?붿껌 ?뷀떚??
+ *
+ * 蹂댄샇?먭? ?대Ⅴ?좎쓽 誘쇨컧?뺣낫(嫄닿컯?뺣낫, 蹂듭빟?뺣낫, ?듯솕湲곕줉)瑜?
+ * ?대엺?섍린 ?꾪빐 愿由ъ옄?먭쾶 ?뱀씤???붿껌?섎뒗 ?꾨줈?몄뒪瑜?愿由ы빀?덈떎.
+ *
+ * ?꾩슂 ?쒕쪟:
+ * 1. ?대Ⅴ?좎쓽 '誘쇨컧?뺣낫 ?????쒓났 ?숈쓽??
+ * 2. 媛議깃?怨꾩쬆紐낆꽌
+ */
+@Entity
+@Table(name = "access_requests")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class AccessRequest {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "access_request_id")
+    private Long id;
+
+    /**
+     * ?붿껌??(蹂댄샇??
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "requester_user_id", nullable = false)
+    private User requester;
+
+    /**
+     * ????대Ⅴ??
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    /**
+     * ?묎렐 踰붿쐞 (蹂듭빟?뺣낫, 嫄닿컯?뺣낫, ?듯솕湲곕줉)
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scope", nullable = false)
+    private AccessScope scope;
+
+    /**
+     * ?붿껌 ?곹깭
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private AccessRequestStatus status;
+
+    /**
+     * ?쒕쪟 ?뺤씤 ?щ? (?숈쓽??+ 媛議깃?怨꾩쬆紐낆꽌)
+     */
+    @Column(name = "is_document_verified", nullable = false)
+    private boolean documentVerified;
+
+    /**
+     * 寃?좏븳 愿由ъ옄
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reviewed_by_admin_user_id")
+    private Admin reviewedByAdmin;
+
+    /**
+     * ?붿껌 ?쇱떆
+     */
+    @Column(name = "requested_at", nullable = false, updatable = false)
+    private LocalDateTime requestedAt;
+
+    /**
+     * 寃곗젙 ?쇱떆 (?뱀씤/嫄곗젅)
+     */
+    @Column(name = "decided_at")
+    private LocalDateTime decidedAt;
+
+    /**
+     * 沅뚰븳 留뚮즺 ?쇱떆
+     */
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
+    /**
+     * 泥좏쉶 ?쇱떆
+     */
+    @Column(name = "revoked_at")
+    private LocalDateTime revokedAt;
+
+    /**
+     * 寃곗젙 ?ъ쑀 (嫄곗젅 ??嫄곗젅 ?ъ쑀 ??
+     */
+    @Column(name = "decision_note", length = 500)
+    private String decisionNote;
+
+    /**
+     * ?묎렐 踰붿쐞 Enum
+     */
+    public enum AccessScope {
+        MEDICATION("蹂듭빟?뺣낫"),
+        HEALTH_INFO("嫄닿컯?뺣낫"),
+        CALL_RECORDS("?듯솕湲곕줉");
+
+        private final String description;
+
+        AccessScope(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    /**
+     * ?붿껌 ?곹깭 Enum
+     */
+    public enum AccessRequestStatus {
+        PENDING("?湲곗쨷"),
+        APPROVED("?뱀씤??),
+        REJECTED("嫄곗젅??),
+        REVOKED("泥좏쉶??),
+        EXPIRED("留뚮즺??),
+        CANCELLED("痍⑥냼??);
+
+        private final String description;
+
+        AccessRequestStatus(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.requestedAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = AccessRequestStatus.PENDING;
+        }
+        if (!this.documentVerified) {
+            this.documentVerified = false;
+        }
+    }
+
+    // ========== ?⑺넗由?硫붿꽌??==========
+
+    /**
+     * ?묎렐 沅뚰븳 ?붿껌 ?앹꽦
+     */
+    public static AccessRequest create(User requester, Elderly elderly, AccessScope scope) {
+        if (requester == null) throw new IllegalArgumentException("REQUESTER_REQUIRED");
+        if (elderly == null) throw new IllegalArgumentException("ELDERLY_REQUIRED");
+        if (scope == null) throw new IllegalArgumentException("SCOPE_REQUIRED");
+
+        return AccessRequest.builder()
+                .requester(requester)
+                .elderly(elderly)
+                .scope(scope)
+                .status(AccessRequestStatus.PENDING)
+                .documentVerified(false)
+                .build();
+    }
+
+    // ========== 鍮꾩쫰?덉뒪 硫붿꽌??==========
+
+    /**
+     * ?쒕쪟 ?뺤씤 ?꾨즺 泥섎━
+     */
+    public void verifyDocuments() {
+        this.documentVerified = true;
+    }
+
+    /**
+     * 愿由ъ옄媛 ?붿껌 ?뱀씤
+     * @param admin ?뱀씤?섎뒗 愿由ъ옄
+     * @param expiresAt 沅뚰븳 留뚮즺??(null?대㈃ 臾닿린??
+     * @param note ?뱀씤 硫붾え
+     */
+    public void approve(Admin admin, LocalDateTime expiresAt, String note) {
+        validatePendingStatus();
+        validateDocumentVerified();
+
+        this.status = AccessRequestStatus.APPROVED;
+        this.reviewedByAdmin = admin;
+        this.decidedAt = LocalDateTime.now();
+        this.expiresAt = expiresAt;
+        this.decisionNote = note;
+    }
+
+    /**
+     * 愿由ъ옄媛 ?붿껌 嫄곗젅
+     * @param admin 嫄곗젅?섎뒗 愿由ъ옄
+     * @param reason 嫄곗젅 ?ъ쑀
+     */
+    public void reject(Admin admin, String reason) {
+        validatePendingStatus();
+
+        this.status = AccessRequestStatus.REJECTED;
+        this.reviewedByAdmin = admin;
+        this.decidedAt = LocalDateTime.now();
+        this.decisionNote = reason;
+    }
+
+    /**
+     * 沅뚰븳 泥좏쉶 (?대Ⅴ???먮뒗 愿由ъ옄媛 ?섑뻾)
+     */
+    public void revoke(String reason) {
+        if (this.status != AccessRequestStatus.APPROVED) {
+            throw new IllegalStateException("ONLY_APPROVED_CAN_BE_REVOKED");
+        }
+
+        this.status = AccessRequestStatus.REVOKED;
+        this.revokedAt = LocalDateTime.now();
+        this.decisionNote = reason;
+    }
+
+    /**
+     * ?붿껌?먭? ?붿껌 痍⑥냼
+     */
+    public void cancel() {
+        validatePendingStatus();
+        this.status = AccessRequestStatus.CANCELLED;
+    }
+
+    /**
+     * 沅뚰븳 留뚮즺 泥섎━
+     */
+    public void expire() {
+        if (this.status != AccessRequestStatus.APPROVED) {
+            throw new IllegalStateException("ONLY_APPROVED_CAN_EXPIRE");
+        }
+        this.status = AccessRequestStatus.EXPIRED;
+    }
+
+    /**
+     * ?꾩옱 ?묎렐 沅뚰븳???좏슚?쒖? ?뺤씤
+     */
+    public boolean isAccessGranted() {
+        if (this.status != AccessRequestStatus.APPROVED) {
+            return false;
+        }
+        if (this.expiresAt != null && LocalDateTime.now().isAfter(this.expiresAt)) {
+            return false;
+        }
+        return true;
+    }
+
+    // ========== 寃利?硫붿꽌??==========
+
+    private void validatePendingStatus() {
+        if (this.status != AccessRequestStatus.PENDING) {
+            throw new IllegalStateException("REQUEST_NOT_PENDING");
+        }
+    }
+
+    private void validateDocumentVerified() {
+        if (!this.documentVerified) {
+            throw new IllegalStateException("DOCUMENTS_NOT_VERIFIED");
+        }
+    }
+}
+
+===== ConsentHistory.java =====
+package com.aicc.silverlink.domain.consent.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "consent_histories")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+@Builder
+public class ConsentHistory {
+
+    @Id
+    @Column(name="consent_history_id")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "consent_type", nullable = false)
+    private String consentType; // PRIVACY, SENSITIVE_INFO, MEDICATION, THIRD_PARTY
+
+    @Column(name = "action_type", nullable = false)
+    private String actionType; // AGREE, DISAGREE, WITHDRAW
+
+    @Column(name = "ip_address")
+    private String ipAddress;
+
+    @Column(name = "user_agent")
+    private String userAgent;
+
+    @Column(name = "consent_date", nullable = false)
+    private LocalDateTime consentDate;
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.consentDate == null) {
+            this.consentDate = LocalDateTime.now();
+        }
+    }
+}
+
+
+===== CounselingRecord.java =====
+package com.aicc.silverlink.domain.counseling.entity;
+
+import com.aicc.silverlink.domain.counselor.entity.Counselor;
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import com.aicc.silverlink.global.common.entity.BaseTimeEntity;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDate;
+import java.time.LocalTime;
+
+@Entity
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+@Builder
+@Table(name = "counseling_record")
+public class CounselingRecord extends BaseTimeEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "counselor_id", nullable = false)
+    private Counselor counselor;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_id", nullable = false)
+    private Elderly elderly;
+
+    @Column(nullable = false)
+    private LocalDate counselingDate;
+
+    @Column(nullable = false)
+    private LocalTime counselingTime;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private CounselingType type;
+
+    @Column(nullable = false)
+    private String category;
+
+    @Column(columnDefinition = "TEXT")
+    private String summary;
+
+    @Column(columnDefinition = "TEXT")
+    private String content;
+
+    private String result;
+
+    @Column(columnDefinition = "TEXT")
+    private String followUp;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private CounselingStatus status;
+
+    public void update(LocalDate counselingDate, LocalTime counselingTime, CounselingType type,
+                       String category, String summary, String content, String result, String followUp, CounselingStatus status) {
+        this.counselingDate = counselingDate;
+        this.counselingTime = counselingTime;
+        this.type = type;
+        this.category = category;
+        this.summary = summary;
+        this.content = content;
+        this.result = result;
+        this.followUp = followUp;
+        this.status = status;
+    }
+
+    public enum CounselingType {
+        PHONE, VISIT, VIDEO
+    }
+
+    public enum CounselingStatus {
+        COMPLETED, IN_PROGRESS, SCHEDULED
+    }
+}
+
+
+===== Counselor.java =====
+package com.aicc.silverlink.domain.counselor.entity;
+
+import com.aicc.silverlink.domain.system.entity.AdministrativeDivision;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDate;
+
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@Entity
+@Table(name = "counselors")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Counselor {
+    @Id
+    @Column(name = "user_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @Column(name = "employee_no", length = 20)
+    private String employeeNo;
+
+    @Column(name = "department", length = 100)
+    private String department;
+
+    @Column(name = "office_phone", length = 20)
+    private String officePhone;
+
+    @Column(name = "joined_at")
+    private LocalDate joinedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "adm_code", nullable = false)
+    private AdministrativeDivision administrativeDivision;
+
+    public Long getAdmCode() {
+        return administrativeDivision != null ? administrativeDivision.getAdmCode() : null;
+    }
+
+    /**
+     * [?섏젙] ?곷떞???뺣낫 ?낅뜲?댄듃
+     * ?쒕퉬???덉씠?댁쓽 ?붽뎄??留욎떠 ?됱젙援ъ뿭? ?좏깮?곸쑝濡??섏젙 媛?ν븯寃?蹂寃쏀뻽?듬땲??
+     */
+    public void updateInfo(String department, String officePhone) {
+        if (department != null && !department.isBlank()) {
+            this.department = department;
+        }
+        if (officePhone != null && !officePhone.isBlank()) {
+            this.officePhone = officePhone;
+        }
+    }
+
+    /**
+     * [異붽?] 愿由ъ옄???됱젙援ъ뿭 蹂寃?硫붿꽌??
+     */
+    public void updateAdministrativeDivision(AdministrativeDivision administrativeDivision) {
+        if (administrativeDivision != null) {
+            this.administrativeDivision = administrativeDivision;
+        }
+    }
+
+    public static Counselor create(User user, String employeeNo, String department,
+                                   String officePhone, LocalDate joinedAt,
+                                   AdministrativeDivision administrativeDivision) {
+        if (user == null) throw new IllegalArgumentException("?ъ슜???뺣낫???꾩닔?낅땲??");
+        if (administrativeDivision == null) throw new IllegalArgumentException("?대떦 ?됱젙援ъ뿭? ?꾩닔?낅땲??");
+
+        return Counselor.builder()
+                .user(user)
+                .employeeNo(employeeNo)
+                .department(department)
+                .officePhone(officePhone)
+                .administrativeDivision(administrativeDivision)
+                .joinedAt(joinedAt)
+                .build();
+    }
+}
+
+===== CallScheduleHistory.java =====
+package com.aicc.silverlink.domain.elderly.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+/**
+ * ?듯솕 ?ㅼ?以?蹂寃??대젰 ?뷀떚??
+ * - 紐⑤뱺 ?ㅼ?以?蹂寃?吏곸젒 ?섏젙, ?붿껌 ?뱀씤/嫄곗젅)??湲곕줉
+ */
+@Entity
+@Table(name = "call_schedule_history", indexes = {
+        @Index(name = "idx_history_elderly", columnList = "elderly_user_id"),
+        @Index(name = "idx_history_changed_by", columnList = "changed_by"),
+        @Index(name = "idx_history_created_at", columnList = "created_at")
+})
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor
+public class CallScheduleHistory {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "changed_by", nullable = false)
+    private User changedBy; // 蹂寃쎌옄 (?곷떞???먮뒗 愿由ъ옄)
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "change_type", nullable = false, length = 30)
+    private ChangeType changeType;
+
+    // ?댁쟾 媛?
+    @Column(name = "previous_time", length = 5)
+    private String previousTime;
+
+    @Column(name = "previous_days", length = 30)
+    private String previousDays;
+
+    @Column(name = "previous_enabled")
+    private Boolean previousEnabled;
+
+    // ??媛?
+    @Column(name = "new_time", length = 5)
+    private String newTime;
+
+    @Column(name = "new_days", length = 30)
+    private String newDays;
+
+    @Column(name = "new_enabled")
+    private Boolean newEnabled;
+
+    // 蹂寃??ъ쑀
+    @Column(name = "change_reason", length = 500)
+    private String changeReason;
+
+    // 愿??蹂寃??붿껌 ID (?붿껌 ?뱀씤/嫄곗젅??寃쎌슦)
+    @Column(name = "related_request_id")
+    private Long relatedRequestId;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    /**
+     * 蹂寃??좏삎
+     */
+    public enum ChangeType {
+        DIRECT_UPDATE("吏곸젒 ?섏젙"), // ?곷떞??愿由ъ옄媛 吏곸젒 ?섏젙 (援щ몢 ?붿껌 ??
+        REQUEST_APPROVED("?붿껌 ?뱀씤"), // ?대Ⅴ???붿껌 ?뱀씤
+        REQUEST_REJECTED("?붿껌 嫄곗젅"), // ?대Ⅴ???붿껌 嫄곗젅
+        ELDERLY_SELF_UPDATE("蹂몄씤 ?섏젙"); // ?대Ⅴ??蹂몄씤 ?섏젙
+
+        private final String description;
+
+        ChangeType(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    /**
+     * 吏곸젒 ?섏젙 ?대젰 ?앹꽦
+     */
+    public static CallScheduleHistory createDirectUpdate(
+            Elderly elderly,
+            User changedBy,
+            String previousTime, String previousDays, Boolean previousEnabled,
+            String newTime, String newDays, Boolean newEnabled,
+            String reason) {
+
+        return CallScheduleHistory.builder()
+                .elderly(elderly)
+                .changedBy(changedBy)
+                .changeType(ChangeType.DIRECT_UPDATE)
+                .previousTime(previousTime)
+                .previousDays(previousDays)
+                .previousEnabled(previousEnabled)
+                .newTime(newTime)
+                .newDays(newDays)
+                .newEnabled(newEnabled)
+                .changeReason(reason)
+                .build();
+    }
+
+    /**
+     * ?붿껌 ?뱀씤 ?대젰 ?앹꽦
+     */
+    public static CallScheduleHistory createRequestApproved(
+            Elderly elderly,
+            User changedBy,
+            Long requestId,
+            String previousTime, String previousDays, Boolean previousEnabled,
+            String newTime, String newDays) {
+
+        return CallScheduleHistory.builder()
+                .elderly(elderly)
+                .changedBy(changedBy)
+                .changeType(ChangeType.REQUEST_APPROVED)
+                .previousTime(previousTime)
+                .previousDays(previousDays)
+                .previousEnabled(previousEnabled)
+                .newTime(newTime)
+                .newDays(newDays)
+                .newEnabled(true)
+                .relatedRequestId(requestId)
+                .build();
+    }
+
+    /**
+     * ?붿껌 嫄곗젅 ?대젰 ?앹꽦
+     */
+    public static CallScheduleHistory createRequestRejected(
+            Elderly elderly,
+            User changedBy,
+            Long requestId,
+            String reason) {
+
+        return CallScheduleHistory.builder()
+                .elderly(elderly)
+                .changedBy(changedBy)
+                .changeType(ChangeType.REQUEST_REJECTED)
+                .relatedRequestId(requestId)
+                .changeReason(reason)
+                .build();
+    }
+}
+
+
+===== Elderly.java =====
+package com.aicc.silverlink.domain.elderly.entity;
+
+import com.aicc.silverlink.domain.system.entity.AdministrativeDivision;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.Period;
+
+@Entity
+@Table(name = "elderly")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor
+public class Elderly {
+
+    @Id
+    @Column(name = "user_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    // ?대떦 ?됱젙 援ъ뿭 - AdministrativeDivision怨?FK 愿怨?
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "adm_code", nullable = false)
+    private AdministrativeDivision administrativeDivision;
+
+    @Column(name = "birth_date", nullable = false)
+    private LocalDate birthDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender", nullable = false)
+    private Gender gender;
+
+    @Column(name = "address_line1", length = 200)
+    private String addressLine1;
+
+    @Column(name = "address_line2", length = 200)
+    private String addressLine2;
+
+    @Column(name = "zipcode", length = 10)
+    private String zipcode;
+
+    // ===== ?듯솕 ?ㅼ?以?=====
+
+    @Column(name = "preferred_call_time", length = 5)
+    private String preferredCallTime; // "HH:mm" ?뺤떇 (?? "09:00")
+
+    @Column(name = "preferred_call_days", length = 30)
+    private String preferredCallDays; // 肄ㅻ쭏 援щ텇 (?? "MON,WED,FRI")
+
+    @Column(name = "call_schedule_enabled", nullable = false)
+    @Builder.Default
+    private Boolean callScheduleEnabled = false;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    public enum Gender {
+        M, F
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * ?몄쓽 硫붿꽌?? ?됱젙援ъ뿭 肄붾뱶 諛섑솚
+     */
+    public Long getAdmCode() {
+        return administrativeDivision != null ? administrativeDivision.getAdmCode() : null;
+    }
+
+    private Elderly(User user, AdministrativeDivision administrativeDivision, LocalDate birthDate, Gender gender) {
+        if (user == null)
+            throw new IllegalArgumentException("USER_REQUIRED");
+        if (administrativeDivision == null)
+            throw new IllegalArgumentException("ADM_DIVISION_REQUIRED");
+        if (birthDate == null)
+            throw new IllegalArgumentException("BIRTH_REQUIRED");
+        if (gender == null)
+            throw new IllegalArgumentException("GENDER_REQUIRED");
+
+        this.user = user;
+        this.administrativeDivision = administrativeDivision;
+        this.birthDate = birthDate;
+        this.gender = gender;
+        this.callScheduleEnabled = false;
+    }
+
+    public static Elderly create(User user, AdministrativeDivision administrativeDivision,
+            LocalDate birthDate, Gender gender) {
+        return new Elderly(user, administrativeDivision, birthDate, gender);
+    }
+
+    public void updateAddress(String line1, String line2, String zipcode) {
+        this.addressLine1 = normalize(line1, 200);
+        this.addressLine2 = normalize(line2, 200);
+        this.zipcode = normalize(zipcode, 10);
+    }
+
+    public void changeAdministrativeDivision(AdministrativeDivision administrativeDivision) {
+        if (administrativeDivision == null)
+            throw new IllegalArgumentException("ADM_DIVISION_REQUIRED");
+        this.administrativeDivision = administrativeDivision;
+    }
+
+    public int age() {
+        return Period.between(this.birthDate, LocalDate.now()).getYears();
+    }
+
+    /**
+     * ?듯솕 ?ㅼ?以??ㅼ젙
+     */
+    public void updateCallSchedule(String time, String days, Boolean enabled) {
+        this.preferredCallTime = time;
+        this.preferredCallDays = days;
+        this.callScheduleEnabled = enabled != null ? enabled : false;
+    }
+
+    private String normalize(String v, int max) {
+        if (v == null)
+            return null;
+        String t = v.trim();
+        if (t.isEmpty())
+            return null;
+        if (t.length() > max)
+            throw new IllegalArgumentException("FIELD_TOO_LONG");
+        return t;
+    }
+}
+
+===== ElderlyHealthInfo.java =====
+package com.aicc.silverlink.domain.elderly.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "elderly_health_info")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class ElderlyHealthInfo {
+
+    @Id
+    @Column(name = "elderly_user_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(name = "elderly_user_id")
+    private Elderly elderly;
+
+    @Column(name = "chronic_diseases", columnDefinition = "TEXT")
+    private String chronicDiseases;
+
+    @Column(name = "mental_health_notes", columnDefinition = "TEXT")
+    private String mentalHealthNotes;
+
+    @Column(name = "special_notes", columnDefinition = "TEXT")
+    private String specialNotes;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    private ElderlyHealthInfo(Elderly elderly) {
+        if (elderly == null) throw new IllegalArgumentException("ELDERLY_REQUIRED");
+        this.elderly = elderly;
+    }
+
+    public static ElderlyHealthInfo create(Elderly elderly) {
+        return new ElderlyHealthInfo(elderly);
+    }
+
+    public void update(String chronicDiseases, String mentalHealthNotes, String specialNotes) {
+        this.chronicDiseases = trimOrNull(chronicDiseases);
+        this.mentalHealthNotes = trimOrNull(mentalHealthNotes);
+        this.specialNotes = trimOrNull(specialNotes);
+    }
+
+    @PrePersist
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    private String trimOrNull(String v) {
+        if (v == null) return null;
+        String t = v.trim();
+        return t.isEmpty() ? null : t;
+    }
+}
+
+
+===== ScheduleChangeRequest.java =====
+package com.aicc.silverlink.domain.elderly.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+/**
+ * ?듯솕 ?ㅼ?以?蹂寃??붿껌 ?뷀떚??
+ */
+@Entity
+@Table(name = "schedule_change_request")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor
+public class ScheduleChangeRequest {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    @Column(name = "requested_call_time", length = 5, nullable = false)
+    private String requestedCallTime; // "HH:mm" ?뺤떇
+
+    @Column(name = "requested_call_days", length = 30, nullable = false)
+    private String requestedCallDays; // 肄ㅻ쭏 援щ텇 (?? "MON,WED,FRI")
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    @Builder.Default
+    private RequestStatus status = RequestStatus.PENDING;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "processed_at")
+    private LocalDateTime processedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "processed_by")
+    private User processedBy;
+
+    @Column(name = "reject_reason", length = 500)
+    private String rejectReason;
+
+    public enum RequestStatus {
+        PENDING, // ?湲곗쨷
+        APPROVED, // ?뱀씤??
+        REJECTED // 嫄곗젅??
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    /**
+     * ?붿껌 ?뱀씤
+     */
+    public void approve(User processor) {
+        this.status = RequestStatus.APPROVED;
+        this.processedAt = LocalDateTime.now();
+        this.processedBy = processor;
+    }
+
+    /**
+     * ?붿껌 嫄곗젅
+     */
+    public void reject(User processor, String reason) {
+        this.status = RequestStatus.REJECTED;
+        this.processedAt = LocalDateTime.now();
+        this.processedBy = processor;
+        this.rejectReason = reason;
+    }
+
+    /**
+     * ?뺤쟻 ?⑺넗由?硫붿꽌??
+     */
+    public static ScheduleChangeRequest create(Elderly elderly, String time, String days) {
+        return ScheduleChangeRequest.builder()
+                .elderly(elderly)
+                .requestedCallTime(time)
+                .requestedCallDays(days)
+                .status(RequestStatus.PENDING)
+                .build();
+    }
+}
+
+
+===== EmergencyAlert.java =====
+package com.aicc.silverlink.domain.emergency.entity;
+
+import com.aicc.silverlink.domain.call.entity.CallRecord;
+import com.aicc.silverlink.domain.counselor.entity.Counselor;
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 湲닿툒 ?뚮┝ ?뷀떚??
+ * CallBot?먯꽌 ?꾪뿕 媛먯? ???앹꽦?섎뒗 ?뚮┝
+ */
+@Entity
+@Table(name = "emergency_alerts",
+        indexes = {
+                @Index(name = "idx_ea_elderly_time", columnList = "elderly_user_id, created_at DESC"),
+                @Index(name = "idx_ea_status_severity", columnList = "status, severity, created_at DESC"),
+                @Index(name = "idx_ea_counselor_status", columnList = "assigned_counselor_id, status")
+        })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class EmergencyAlert {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "alert_id")
+    private Long id;
+
+    /**
+     * ????대Ⅴ??
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    /**
+     * 愿???듯솕 湲곕줉 (誘몄쓳?듭쓽 寃쎌슦 null 媛??
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "call_id")
+    private CallRecord callRecord;
+
+    /**
+     * ?꾪뿕??(CRITICAL: 湲닿툒, WARNING: 二쇱쓽)
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "severity", nullable = false, length = 20)
+    private Severity severity;
+
+    /**
+     * ?뚮┝ ?좏삎 (HEALTH: 嫄닿컯?꾪뿕, MENTAL: ?뺤꽌?꾪뿕, NO_RESPONSE: ?곗냽誘몄쓳??
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "alert_type", nullable = false, length = 20)
+    private AlertType alertType;
+
+    /**
+     * ?뚮┝ ?쒕ぉ
+     */
+    @Column(name = "title", nullable = false, length = 200)
+    private String title;
+
+    /**
+     * ?곸꽭 ?댁슜 (STT 湲곕컲)
+     */
+    @Column(name = "description", nullable = false, columnDefinition = "TEXT")
+    private String description;
+
+    /**
+     * 媛먯????꾪뿕 ?ㅼ썙??紐⑸줉 (JSON)
+     */
+    @Column(name = "danger_keywords", columnDefinition = "JSON")
+    private String dangerKeywords;
+
+    /**
+     * 愿??STT ?먮Ц ?댁슜
+     */
+    @Column(name = "related_stt_content", columnDefinition = "TEXT")
+    private String relatedSttContent;
+
+    /**
+     * 泥섎━ ?곹깭
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    @Builder.Default
+    private AlertStatus status = AlertStatus.PENDING;
+
+    /**
+     * ?대떦 ?곷떞??
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_counselor_id")
+    private Counselor assignedCounselor;
+
+    /**
+     * 泥섎━???ъ슜??
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "processed_by_user_id")
+    private User processedBy;
+
+    /**
+     * 泥섎━ ?쇱떆
+     */
+    @Column(name = "processed_at")
+    private LocalDateTime processedAt;
+
+    /**
+     * 泥섎━ 硫붾え
+     */
+    @Column(name = "resolution_note", columnDefinition = "TEXT")
+    private String resolutionNote;
+
+    /**
+     * ?앹꽦 ?쇱떆
+     */
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    /**
+     * ?섏젙 ?쇱떆
+     */
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    /**
+     * ?뚮┝ ?섏떊??紐⑸줉
+     */
+    @OneToMany(mappedBy = "emergencyAlert", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<EmergencyAlertRecipient> recipients = new ArrayList<>();
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = AlertStatus.PENDING;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    // ========== Enum ?뺤쓽 ==========
+
+    /**
+     * ?꾪뿕??
+     */
+    public enum Severity {
+        CRITICAL("湲닿툒"),
+        WARNING("二쇱쓽");
+
+        private final String description;
+
+        Severity(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    /**
+     * ?뚮┝ ?좏삎
+     */
+    public enum AlertType {
+        HEALTH("嫄닿컯?꾪뿕"),
+        MENTAL("?뺤꽌?꾪뿕"),
+        NO_RESPONSE("?곗냽誘몄쓳??);
+
+        private final String description;
+
+        AlertType(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    /**
+     * 泥섎━ ?곹깭
+     */
+    public enum AlertStatus {
+        PENDING("誘몄쿂由?),
+        IN_PROGRESS("泥섎━以?),
+        RESOLVED("泥섎━?꾨즺"),
+        ESCALATED("?곸쐞蹂닿퀬");
+
+        private final String description;
+
+        AlertStatus(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    // ========== 鍮꾩쫰?덉뒪 硫붿꽌??==========
+
+    /**
+     * 泥섎━ ?쒖옉
+     */
+    public void startProcessing(User processor) {
+        if (this.status != AlertStatus.PENDING) {
+            throw new IllegalStateException("誘몄쿂由??곹깭???뚮┝留?泥섎━瑜??쒖옉?????덉뒿?덈떎.");
+        }
+        this.status = AlertStatus.IN_PROGRESS;
+        this.processedBy = processor;
+    }
+
+    /**
+     * 泥섎━ ?꾨즺
+     */
+    public void resolve(User processor, String note) {
+        this.status = AlertStatus.RESOLVED;
+        this.processedBy = processor;
+        this.processedAt = LocalDateTime.now();
+        this.resolutionNote = note;
+    }
+
+    /**
+     * ?곸쐞 蹂닿퀬
+     */
+    public void escalate(User processor, String note) {
+        this.status = AlertStatus.ESCALATED;
+        this.processedBy = processor;
+        this.processedAt = LocalDateTime.now();
+        this.resolutionNote = note;
+    }
+
+    /**
+     * ?섏떊??異붽?
+     */
+    public void addRecipient(EmergencyAlertRecipient recipient) {
+        this.recipients.add(recipient);
+        recipient.setEmergencyAlert(this);
+    }
+
+    /**
+     * 湲닿툒 ?щ? ?뺤씤
+     */
+    public boolean isCritical() {
+        return this.severity == Severity.CRITICAL;
+    }
+
+    /**
+     * 誘몄쿂由??щ? ?뺤씤
+     */
+    public boolean isPending() {
+        return this.status == AlertStatus.PENDING;
+    }
+}
+
+
+===== EmergencyAlertRecipient.java =====
+package com.aicc.silverlink.domain.emergency.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+/**
+ * 湲닿툒 ?뚮┝ ?섏떊???뷀떚??
+ * 湲닿툒 ?뚮┝??諛쏅뒗 ?ъ슜???뺣낫 (愿由ъ옄, ?곷떞?? 蹂댄샇??
+ */
+@Entity
+@Table(name = "emergency_alert_recipients",
+        indexes = {
+                @Index(name = "idx_ear_receiver_read", columnList = "receiver_user_id, is_read, created_at DESC"),
+                @Index(name = "idx_ear_alert", columnList = "alert_id")
+        },
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uq_ear_alert_receiver", columnNames = {"alert_id", "receiver_user_id"})
+        })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class EmergencyAlertRecipient {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "recipient_id")
+    private Long id;
+
+    /**
+     * 湲닿툒 ?뚮┝
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "alert_id", nullable = false)
+    @Setter
+    private EmergencyAlert emergencyAlert;
+
+    /**
+     * ?섏떊??
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "receiver_user_id", nullable = false)
+    private User receiver;
+
+    /**
+     * ?섏떊????븷 (ADMIN, COUNSELOR, GUARDIAN)
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "receiver_role", nullable = false, length = 20)
+    private ReceiverRole receiverRole;
+
+    /**
+     * ???뚮┝ ?쎌쓬 ?щ?
+     */
+    @Column(name = "is_read", nullable = false)
+    @Builder.Default
+    private boolean isRead = false;
+
+    /**
+     * ?쎌? ?쒓컙
+     */
+    @Column(name = "read_at")
+    private LocalDateTime readAt;
+
+    /**
+     * SMS 諛쒖넚 ????щ?
+     */
+    @Column(name = "sms_required", nullable = false)
+    @Builder.Default
+    private boolean smsRequired = false;
+
+    /**
+     * SMS 諛쒖넚 ?щ?
+     */
+    @Column(name = "sms_sent", nullable = false)
+    @Builder.Default
+    private boolean smsSent = false;
+
+    /**
+     * SMS 諛쒖넚 ?쒓컙
+     */
+    @Column(name = "sms_sent_at")
+    private LocalDateTime smsSentAt;
+
+    /**
+     * SMS 諛쒖넚 ?곹깭
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sms_delivery_status", length = 20)
+    private SmsDeliveryStatus smsDeliveryStatus;
+
+    /**
+     * ?앹꽦 ?쇱떆
+     */
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    // ========== Enum ?뺤쓽 ==========
+
+    /**
+     * ?섏떊????븷
+     */
+    public enum ReceiverRole {
+        ADMIN("愿由ъ옄"),
+        COUNSELOR("?곷떞??),
+        GUARDIAN("蹂댄샇??);
+
+        private final String description;
+
+        ReceiverRole(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    /**
+     * SMS 諛쒖넚 ?곹깭
+     */
+    public enum SmsDeliveryStatus {
+        PENDING("?湲?),
+        SENT("諛쒖넚"),
+        DELIVERED("?꾨떖?꾨즺"),
+        FAILED("?ㅽ뙣");
+
+        private final String description;
+
+        SmsDeliveryStatus(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    // ========== 鍮꾩쫰?덉뒪 硫붿꽌??==========
+
+    /**
+     * ?쎌쓬 泥섎━
+     */
+    public void markAsRead() {
+        if (!this.isRead) {
+            this.isRead = true;
+            this.readAt = LocalDateTime.now();
+        }
+    }
+
+    /**
+     * SMS 諛쒖넚 泥섎━
+     */
+    public void markSmsSent() {
+        this.smsSent = true;
+        this.smsSentAt = LocalDateTime.now();
+        this.smsDeliveryStatus = SmsDeliveryStatus.SENT;
+    }
+
+    /**
+     * SMS 諛쒖넚 ?ㅽ뙣 泥섎━
+     */
+    public void markSmsFailed() {
+        this.smsSent = false;
+        this.smsDeliveryStatus = SmsDeliveryStatus.FAILED;
+    }
+
+    /**
+     * SMS ?꾨떖 ?꾨즺 泥섎━ (Webhook 肄쒕갚 ??
+     */
+    public void markSmsDelivered() {
+        this.smsDeliveryStatus = SmsDeliveryStatus.DELIVERED;
+    }
+
+    /**
+     * ?⑺넗由?硫붿꽌?? ?섏떊???앹꽦
+     */
+    public static EmergencyAlertRecipient create(
+            EmergencyAlert alert,
+            User receiver,
+            ReceiverRole role,
+            boolean smsRequired) {
+
+        EmergencyAlertRecipient recipient = EmergencyAlertRecipient.builder()
+                .emergencyAlert(alert)
+                .receiver(receiver)
+                .receiverRole(role)
+                .smsRequired(smsRequired)
+                .smsDeliveryStatus(smsRequired ? SmsDeliveryStatus.PENDING : null)
+                .build();
+
+        return recipient;
+    }
+}
+
+
+===== SmsLog.java =====
+package com.aicc.silverlink.domain.emergency.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+/**
+ * SMS 諛쒖넚 ?대젰 ?뷀떚??
+ * 紐⑤뱺 SMS 諛쒖넚 湲곕줉?????
+ */
+@Entity
+@Table(name = "sms_logs",
+        indexes = {
+                @Index(name = "idx_sms_receiver_time", columnList = "receiver_user_id, created_at DESC"),
+                @Index(name = "idx_sms_type_ref", columnList = "message_type, reference_id"),
+                @Index(name = "idx_sms_status", columnList = "status, created_at")
+        })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class SmsLog {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "sms_log_id")
+    private Long id;
+
+    /**
+     * ?섏떊??(?뚯썝??寃쎌슦)
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "receiver_user_id")
+    private User receiver;
+
+    /**
+     * ?섏떊 ?꾪솕踰덊샇 (E.164 ?뺤떇: +821012345678)
+     */
+    @Column(name = "receiver_phone", nullable = false, length = 20)
+    private String receiverPhone;
+
+    /**
+     * 硫붿떆吏 ?좏삎
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "message_type", nullable = false, length = 30)
+    private MessageType messageType;
+
+    /**
+     * 李몄“ ?뚯씠釉?醫낅쪟 (emergency_alerts, inquiries, complaints, access_requests ??
+     */
+    @Column(name = "reference_type", length = 50)
+    private String referenceType;
+
+    /**
+     * 李몄“ ?뚯씠釉붿쓽 PK
+     */
+    @Column(name = "reference_id")
+    private Long referenceId;
+
+    /**
+     * 諛쒖넚??硫붿떆吏 ?댁슜
+     */
+    @Column(name = "message_content", nullable = false, columnDefinition = "TEXT")
+    private String messageContent;
+
+    /**
+     * ???곌껐 ?⑥텞 URL
+     */
+    @Column(name = "short_url", length = 255)
+    private String shortUrl;
+
+    /**
+     * 諛쒖넚 ?곹깭
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    @Builder.Default
+    private SmsStatus status = SmsStatus.PENDING;
+
+    /**
+     * ?몃? ?쒕퉬??Twilio) 硫붿떆吏 ID
+     */
+    @Column(name = "external_msg_id", length = 100)
+    private String externalMsgId;
+
+    /**
+     * 諛쒖넚 ?쒓컖
+     */
+    @Column(name = "sent_at")
+    private LocalDateTime sentAt;
+
+    /**
+     * ?꾨떖 ?꾨즺 ?쒓컖
+     */
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
+
+    /**
+     * ?ㅻ쪟 硫붿떆吏
+     */
+    @Column(name = "error_message", columnDefinition = "TEXT")
+    private String errorMessage;
+
+    /**
+     * ?앹꽦 ?쇱떆
+     */
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = SmsStatus.PENDING;
+        }
+    }
+
+    // ========== Enum ?뺤쓽 ==========
+
+    /**
+     * 硫붿떆吏 ?좏삎
+     */
+    public enum MessageType {
+        EMERGENCY_CRITICAL("湲닿툒 ?뚮┝ (CRITICAL)"),
+        EMERGENCY_WARNING("二쇱쓽 ?뚮┝ (WARNING)"),
+        INQUIRY_REPLY("臾몄쓽 ?듬?"),
+        COMPLAINT_REPLY("誘쇱썝 ?듬?"),
+        ACCESS_APPROVED("?묎렐沅뚰븳 ?뱀씤"),
+        ACCESS_REJECTED("?묎렐沅뚰븳 嫄곗젅"),
+        SYSTEM("?쒖뒪???뚮┝");
+
+        private final String description;
+
+        MessageType(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    /**
+     * SMS 諛쒖넚 ?곹깭
+     */
+    public enum SmsStatus {
+        PENDING("?湲?),
+        SENT("諛쒖넚"),
+        DELIVERED("?꾨떖?꾨즺"),
+        FAILED("?ㅽ뙣");
+
+        private final String description;
+
+        SmsStatus(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    // ========== 鍮꾩쫰?덉뒪 硫붿꽌??==========
+
+    /**
+     * 諛쒖넚 ?깃났 泥섎━
+     */
+    public void markSent(String externalMsgId) {
+        this.status = SmsStatus.SENT;
+        this.sentAt = LocalDateTime.now();
+        this.externalMsgId = externalMsgId;
+    }
+
+    /**
+     * ?꾨떖 ?꾨즺 泥섎━
+     */
+    public void markDelivered() {
+        this.status = SmsStatus.DELIVERED;
+        this.deliveredAt = LocalDateTime.now();
+    }
+
+    /**
+     * 諛쒖넚 ?ㅽ뙣 泥섎━
+     */
+    public void markFailed(String errorMessage) {
+        this.status = SmsStatus.FAILED;
+        this.errorMessage = errorMessage;
+    }
+
+    /**
+     * ?⑺넗由?硫붿꽌?? 湲닿툒 ?뚮┝ SMS 濡쒓렇 ?앹꽦
+     */
+    public static SmsLog createForEmergencyAlert(
+            User receiver,
+            String receiverPhone,
+            EmergencyAlert.Severity severity,
+            Long alertId,
+            String messageContent,
+            String shortUrl) {
+
+        MessageType type = severity == EmergencyAlert.Severity.CRITICAL
+                ? MessageType.EMERGENCY_CRITICAL
+                : MessageType.EMERGENCY_WARNING;
+
+        return SmsLog.builder()
+                .receiver(receiver)
+                .receiverPhone(receiverPhone)
+                .messageType(type)
+                .referenceType("emergency_alerts")
+                .referenceId(alertId)
+                .messageContent(messageContent)
+                .shortUrl(shortUrl)
+                .build();
+    }
+
+    /**
+     * ?⑺넗由?硫붿꽌?? 臾몄쓽 ?듬? SMS 濡쒓렇 ?앹꽦
+     */
+    public static SmsLog createForInquiryReply(
+            User receiver,
+            String receiverPhone,
+            Long inquiryId,
+            String messageContent,
+            String shortUrl) {
+
+        return SmsLog.builder()
+                .receiver(receiver)
+                .receiverPhone(receiverPhone)
+                .messageType(MessageType.INQUIRY_REPLY)
+                .referenceType("inquiries")
+                .referenceId(inquiryId)
+                .messageContent(messageContent)
+                .shortUrl(shortUrl)
+                .build();
+    }
+
+    /**
+     * ?⑺넗由?硫붿꽌?? 誘쇱썝 ?듬? SMS 濡쒓렇 ?앹꽦
+     */
+    public static SmsLog createForComplaintReply(
+            User receiver,
+            String receiverPhone,
+            Long complaintId,
+            String messageContent,
+            String shortUrl) {
+
+        return SmsLog.builder()
+                .receiver(receiver)
+                .receiverPhone(receiverPhone)
+                .messageType(MessageType.COMPLAINT_REPLY)
+                .referenceType("complaints")
+                .referenceId(complaintId)
+                .messageContent(messageContent)
+                .shortUrl(shortUrl)
+                .build();
+    }
+
+    /**
+     * ?⑺넗由?硫붿꽌?? ?묎렐沅뚰븳 ?뱀씤/嫄곗젅 SMS 濡쒓렇 ?앹꽦
+     */
+    public static SmsLog createForAccessRequest(
+            User receiver,
+            String receiverPhone,
+            boolean approved,
+            Long requestId,
+            String messageContent,
+            String shortUrl) {
+
+        MessageType type = approved
+                ? MessageType.ACCESS_APPROVED
+                : MessageType.ACCESS_REJECTED;
+
+        return SmsLog.builder()
+                .receiver(receiver)
+                .receiverPhone(receiverPhone)
+                .messageType(type)
+                .referenceType("access_requests")
+                .referenceId(requestId)
+                .messageContent(messageContent)
+                .shortUrl(shortUrl)
+                .build();
+    }
+}
+
+
+===== FileAttachment.java =====
+package com.aicc.silverlink.domain.file.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "file_attachments")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class FileAttachment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "file_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_user_id")
+    private User owner;
+
+    @Column(name = "file_key", nullable = false, length = 500)
+    private String fileKey;
+
+    @Column(name = "file_name", length = 255)
+    private String fileName;
+
+    @Column(name = "content_type", length = 100)
+    private String contentType;
+
+    @Column(name = "size_bytes")
+    private Long sizeBytes;
+
+    @Column(name = "checksum_sha256", length = 64)
+    private String checksumSha256;
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+}
+
+
+===== Guardian.java =====
+package com.aicc.silverlink.domain.guardian.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "guardians")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+@Builder
+public class Guardian {
+    @Id
+    @Column(name = "user_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @Column(name = "address_line1", length = 200)
+    private String addressLine1;
+
+    @Column(name = "address_line2", length = 200)
+    private String addressLine2;
+
+    @Column(name = "zipcode", length = 10)
+    private String zipcode;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    // ??二쇱냼 ?뺣낫 ?섏젙???꾪븳 硫붿꽌??異붽?
+    public void updateAddress(String addressLine1, String addressLine2, String zipcode) {
+        this.addressLine1 = addressLine1;
+        this.addressLine2 = addressLine2;
+        this.zipcode = zipcode;
+    }
+
+    public static Guardian create(User user, String addressLine1, String addressLine2, String zipcode, LocalDateTime createdAt) {
+        return Guardian.builder()
+                .user(user)
+                .addressLine1(addressLine1)
+                .addressLine2(addressLine2)
+                .zipcode(zipcode)
+                .createdAt(createdAt)
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+}
+
+===== GuardianElderly.java =====
+package com.aicc.silverlink.domain.guardian.entity;
+
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "guardian_elderly")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class GuardianElderly {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "guardian_elderly_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "guardian_user_id", nullable = false, unique = true)
+    private Guardian guardian;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false, unique = true)
+    private Elderly elderly;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "relation_type", nullable = false)
+    private RelationType relationType;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    public static GuardianElderly create(Guardian guardian, Elderly elderly, RelationType relationType,
+            LocalDateTime createdAt) {
+
+        return GuardianElderly.builder()
+                .guardian(guardian)
+                .elderly(elderly)
+                .relationType(relationType)
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+}
+
+
+===== RelationType.java =====
+package com.aicc.silverlink.domain.guardian.entity;
+
+public enum RelationType {
+    CHILD, SPOUSE, RELATIVE, OTHER
+}
+
+===== Faq.java =====
+package com.aicc.silverlink.domain.inquiry.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "faqs")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Faq {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "faq_id")
+    private Long id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", nullable = false)
+    private FaqCategory category;
+
+    @Column(name = "question", nullable = false, length = 500)
+    private String question;
+
+    @Column(name = "answer_text", nullable = false, columnDefinition = "TEXT")
+    private String answerText;
+
+    @Column(name = "view_count", nullable = false)
+    private int viewCount;
+
+    @Column(name = "is_active", nullable = false)
+    private boolean isActive;
+
+    @Column(name = "display_order", nullable = false)
+    private int displayOrder;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        if (this.isActive == false) { // Default true logic handled elsewhere or assume true by default if needed
+            this.isActive = true;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public enum FaqCategory {
+        SERVICE, CALLBOT, MEDICATION, WELFARE,
+    }
+}
+
+
+===== Inquiry.java =====
+package com.aicc.silverlink.domain.inquiry.entity;
+
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "inquiries")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Inquiry {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "qna_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_user_id", nullable = false)
+    private User createdBy;
+
+    @Column(name = "title", nullable = false, length = 200)
+    private String title;
+
+    @Column(name = "question_text", nullable = false, columnDefinition = "TEXT")
+    private String questionText;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private InquiryStatus status;
+
+    @Column(name = "is_deleted", nullable = false)
+    private boolean isDeleted;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = InquiryStatus.PENDING;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public enum InquiryStatus {
+        PENDING, ANSWERED
+    }
+
+    public Inquiry(Elderly elderly, User createdBy, String title, String questionText) {
+        this.elderly = elderly;
+        this.createdBy = createdBy;
+        this.title = title;
+        this.questionText = questionText;
+        this.status = InquiryStatus.PENDING;
+        this.isDeleted = false;
+    }
+
+    public void updateStatus(InquiryStatus status) {
+        this.status = status;
+    }
+}
+
+
+===== InquiryAnswer.java =====
+package com.aicc.silverlink.domain.inquiry.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "inquiry_answers")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class InquiryAnswer {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "answer_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "qna_id", nullable = false)
+    private Inquiry inquiry;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "answered_by_user_id", nullable = false)
+    private User answeredBy;
+
+    @Column(name = "answer_text", nullable = false, columnDefinition = "TEXT")
+    private String answerText;
+
+    @Column(name = "is_deleted", nullable = false)
+    private boolean isDeleted;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public InquiryAnswer(Inquiry inquiry, User answeredBy, String answerText) {
+        this.inquiry = inquiry;
+        this.answeredBy = answeredBy;
+        this.answerText = answerText;
+        this.isDeleted = false;
+    }
+}
+
+
+===== WelfareFacility.java =====
+package com.aicc.silverlink.domain.map.entity;
+
+import com.aicc.silverlink.domain.map.dto.WelfareFacilityRequest;
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "welfare_facilities")
+@Getter
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+public class WelfareFacility {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "facility_id")
+    private Long id;
+
+    @Column(name = "name", nullable = false, length = 255)
+    private String name;
+
+    @Column(name = "address", nullable = false, length = 500)
+    private String address;
+
+    @Column(name = "latitude", nullable = false)
+    private Double latitude; // ?꾨룄
+
+    @Column(name = "longitude", nullable = false)
+    private Double longitude; // 寃쎈룄
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false)
+    private WelfareFacilityType type; // ?쒖꽕 醫낅쪟 (Enum?쇰줈 ?뺤쓽)
+
+    @Column(name = "phone", length = 20)
+    private String phone;
+
+    @Column(name = "operating_hours", length = 255)
+    private String operatingHours;
+
+    // TODO: ?곗씠?곕쿋?댁뒪??description 而щ읆 ?섎룞 異붽? ?꾩슂
+    // @Column(name = "description", columnDefinition = "TEXT")
+    // private String description;
+
+    // 湲고? ?꾩슂???꾨뱶 異붽? 媛??(?? ?뱀궗?댄듃, ?곸꽭 ?ㅻ챸 ??
+
+    public Long getId() {
+        return id;
+    }
+
+    public void update(WelfareFacilityRequest request) {
+        this.name = request.getName();
+        this.address = request.getAddress();
+        this.latitude = request.getLatitude();
+        this.longitude = request.getLongitude();
+        this.type = request.getType();
+        this.phone = request.getPhone();
+        this.operatingHours = request.getOperatingHours();
+        // TODO: description ?꾨뱶 ?쒖꽦????異붽?
+        // this.description = request.getDescription();
+    }
+}
+
+
+===== WelfareFacilityType.java =====
+package com.aicc.silverlink.domain.map.entity;
+
+public enum WelfareFacilityType {
+    ELDERLY_WELFARE_CENTER("?몄씤蹂듭?愿"),
+    DISABLED_WELFARE_CENTER("?μ븷?몃났吏愿"),
+    CHILD_WELFARE_CENTER("?꾨룞蹂듭?愿"),
+    COMMUNITY_WELFARE_CENTER("醫낇빀?ы쉶蹂듭?愿"),
+    SENIOR_CENTER("寃쎈줈??),
+    DAYCARE_CENTER("二쇨컙蹂댄샇?쇳꽣"),
+    HOME_CARE_SERVICE("?ш?蹂듭??쒕퉬??);
+
+    private final String description;
+
+    WelfareFacilityType(String description) {
+        this.description = description;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+}
+
+
+===== MedicationIntakeLog.java =====
+package com.aicc.silverlink.domain.medication.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "medication_intake_logs")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class MedicationIntakeLog {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "intake_log_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schedule_id", nullable = false)
+    private MedicationSchedule schedule;
+
+    @Column(name = "intake_date", nullable = false)
+    private LocalDate intakeDate;
+
+    @Column(name = "intake_time")
+    private LocalTime intakeTime;
+
+    @Column(name = "taken", nullable = false)
+    private boolean taken;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false)
+    private Source source;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    public enum Source {
+        ELDERLY, CALLBOT, COUNSELOR
+    }
+}
+
+
+===== MedicationOcrLog.java =====
+package com.aicc.silverlink.domain.medication.entity;
+
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import com.aicc.silverlink.domain.file.entity.FileAttachment;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "medication_ocr_logs")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class MedicationOcrLog {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "ocr_log_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "uploaded_by_user_id", nullable = false)
+    private User uploadedBy;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "image_file_id")
+    private FileAttachment imageFile;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ocr_status", nullable = false)
+    private OcrStatus ocrStatus;
+
+    @Column(name = "confidence", precision = 5, scale = 4)
+    private BigDecimal confidence;
+
+    @Column(name = "extracted_text", columnDefinition = "TEXT")
+    private String extractedText;
+
+    @Column(name = "error_message", length = 500)
+    private String errorMessage;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "processed_at")
+    private LocalDateTime processedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        if (this.ocrStatus == null) {
+            this.ocrStatus = OcrStatus.REQUESTED;
+        }
+    }
+
+    public enum OcrStatus {
+        REQUESTED, SUCCEEDED, FAILED
+    }
+}
+
+
+===== MedicationSchedule.java =====
+package com.aicc.silverlink.domain.medication.entity;
+
+import com.aicc.silverlink.domain.elderly.entity.Elderly;
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "medication_schedules")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class MedicationSchedule {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "schedule_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "elderly_user_id", nullable = false)
+    private Elderly elderly;
+
+    @Column(name = "medication_name", nullable = false, length = 200)
+    private String medicationName;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_ocr_log_id")
+    private MedicationOcrLog sourceOcrLog;
+
+    @Column(name = "start_date", nullable = false)
+    private LocalDate startDate;
+
+    @Column(name = "end_date")
+    private LocalDate endDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "intake_timing", nullable = false)
+    private IntakeTiming intakeTiming;
+
+    @Column(name = "dosage_text", length = 100)
+    private String dosageText;
+
+    @Column(name = "is_active", nullable = false)
+    private boolean isActive;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_user_id", nullable = false)
+    private User createdBy;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @Builder
+    public MedicationSchedule(Elderly elderly, String medicationName, String dosageText,
+            LocalDate startDate, LocalDate endDate, IntakeTiming intakeTiming,
+            User createdBy, MedicationOcrLog sourceOcrLog) {
+        this.elderly = elderly;
+        this.medicationName = medicationName;
+        this.dosageText = dosageText;
+        this.startDate = startDate != null ? startDate : LocalDate.now();
+        this.endDate = endDate;
+        this.intakeTiming = intakeTiming != null ? intakeTiming : IntakeTiming.ANYTIME;
+        this.createdBy = createdBy;
+        this.sourceOcrLog = sourceOcrLog;
+        this.isActive = true;
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        if (this.intakeTiming == null) {
+            this.intakeTiming = IntakeTiming.ANYTIME;
+        }
+        if (!this.isActive) {
+            this.isActive = true;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 蹂듭빟 ?쇱젙 鍮꾪솢?깊솕 (?쇰━????젣)
+     */
+    public void deactivate() {
+        this.isActive = false;
+    }
+
+    /**
+     * ?뚮┝ ?좉?
+     */
+    public void toggleActive() {
+        this.isActive = !this.isActive;
+    }
+
+    /**
+     * 蹂듭빟 ?뺣낫 ?섏젙
+     */
+    public void update(String medicationName, String dosageText, LocalDate endDate) {
+        if (medicationName != null)
+            this.medicationName = medicationName;
+        if (dosageText != null)
+            this.dosageText = dosageText;
+        this.endDate = endDate;
+    }
+
+    public enum IntakeTiming {
+        BEFORE_MEAL, AFTER_MEAL, ANYTIME
+    }
+}
+
+
+===== MedicationScheduleTime.java =====
+package com.aicc.silverlink.domain.medication.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalTime;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "medication_schedule_times")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class MedicationScheduleTime {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "schedule_time_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schedule_id", nullable = false)
+    private MedicationSchedule schedule;
+
+    @Column(name = "dose_seq", nullable = false)
+    private Short doseSeq;
+
+    @Column(name = "intake_time", nullable = false)
+    private LocalTime intakeTime;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Builder
+    public MedicationScheduleTime(MedicationSchedule schedule, Short doseSeq, LocalTime intakeTime) {
+        this.schedule = schedule;
+        this.doseSeq = doseSeq != null ? doseSeq : 1;
+        this.intakeTime = intakeTime;
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+}
+
+
+===== Notice.java =====
+package com.aicc.silverlink.domain.notice.entity;
+
+import com.aicc.silverlink.domain.admin.entity.Admin;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "notices")
+@Getter
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+public class Notice {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "notice_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_admin_user_id", nullable = false) // ?곗씠?곕쿋?댁뒪 ?ㅽ궎留덉뿉 留욎떠 NOT NULL
+    private Admin createdBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", nullable = false)
+    private NoticeCategory category;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_mode", nullable = false)
+    private TargetMode targetMode;
+
+    @Column(name = "title", nullable = false, length = 255)
+    private String title;
+
+    @Column(name = "content", nullable = false, columnDefinition = "TEXT")
+    private String content;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private NoticeStatus status;
+
+    @Column(name = "is_priority", nullable = false)
+    private boolean isPriority;
+
+    @Column(name = "is_popup", nullable = false)
+    private boolean isPopup;
+
+    @Column(name = "popup_start_at")
+    private LocalDateTime popupStartAt;
+
+    @Column(name = "popup_end_at")
+    private LocalDateTime popupEndAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        if (this.targetMode == null) {
+            this.targetMode = TargetMode.ALL;
+        }
+        if (this.status == null) {
+            this.status = NoticeStatus.DRAFT;
+        }
+        if (this.category == null) {
+            this.category = NoticeCategory.NOTICE;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    // Soft Delete瑜??꾪븳 硫붿꽌??異붽?
+    public Notice markAsDeleted() {
+        return Notice.builder()
+                .id(this.id)
+                .createdBy(this.createdBy)
+                .category(this.category)
+                .targetMode(this.targetMode)
+                .title(this.title)
+                .content(this.content)
+                .status(NoticeStatus.DELETED)
+                .isPriority(this.isPriority)
+                .isPopup(this.isPopup)
+                .popupStartAt(this.popupStartAt)
+                .popupEndAt(this.popupEndAt)
+                .createdAt(this.createdAt)
+                .updatedAt(LocalDateTime.now())
+                .deletedAt(LocalDateTime.now())
+                .build();
+    }
+
+    // ?낅뜲?댄듃瑜??꾪븳 硫붿꽌??異붽?
+    public Notice updateNotice(String title, String content, NoticeCategory category, 
+                              TargetMode targetMode, boolean isPriority, boolean isPopup,
+                              LocalDateTime popupStartAt, LocalDateTime popupEndAt, NoticeStatus status) {
+        return Notice.builder()
+                .id(this.id)
+                .createdBy(this.createdBy)
+                .category(category)
+                .targetMode(targetMode)
+                .title(title)
+                .content(content)
+                .status(status)
+                .isPriority(isPriority)
+                .isPopup(isPopup)
+                .popupStartAt(popupStartAt)
+                .popupEndAt(popupEndAt)
+                .createdAt(this.createdAt)
+                .updatedAt(LocalDateTime.now())
+                .deletedAt(this.deletedAt)
+                .build();
+    }
+
+    public enum TargetMode {
+        ALL, ROLE_SET
+    }
+
+    public enum NoticeStatus {
+        DRAFT, PUBLISHED, ARCHIVED, DELETED
+    }
+}
+
+
+===== NoticeAttachment.java =====
+package com.aicc.silverlink.domain.notice.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "notice_attachments")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class NoticeAttachment {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "notice_attachment_id")
+    private Long id;
+
+    // Notice???愿怨꾨뒗 ?좎? (?대뼡 怨듭??ы빆???뚯씪?몄? ?뚯븘???섎?濡?
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "notice_id", nullable = false)
+    private Notice notice;
+
+    /* * [?섏젙] FileAttachment 愿怨???젣 -> 吏곸젒 而щ읆 留ㅽ븨
+     */
+
+    @Column(name = "file_name", nullable = false)
+    private String fileName;         // ??λ맂 ?뚯씪紐?(UUID ??
+
+    @Column(name = "original_file_name", nullable = false)
+    private String originalFileName; // ?ъ슜?먭? ?щ┛ ?먮낯 ?뚯씪紐?
+
+    @Column(name = "file_path", nullable = false)
+    private String filePath;         // S3 Key ?먮뒗 ???寃쎈줈
+
+    @Column(name = "file_size")
+    private Long fileSize;           // ?뚯씪 ?ш린 (?좏깮?ы빆)
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    // 媛앹껜 ?앹꽦???꾪븳 鍮뚮뜑 ?⑦꽩 異붽?
+    @Builder
+    public NoticeAttachment(Notice notice, String fileName, String originalFileName, String filePath, Long fileSize) {
+        this.notice = notice;
+        this.fileName = fileName;
+        this.originalFileName = originalFileName;
+        this.filePath = filePath;
+        this.fileSize = fileSize;
+    }
+
+    // ?곌?愿怨??몄쓽 硫붿꽌??(Notice 履?由ъ뒪?몄뿉???ｌ뼱二쇨린 ?꾪븿 - ?좏깮?ы빆)
+    public void setNotice(Notice notice) {
+        this.notice = notice;
+        // notice.getAttachments().add(this); // Notice ?뷀떚??援ъ“???곕씪 ?꾩슂??二쇱꽍 ?댁젣
+    }
+}
+
+===== NoticeCategory.java =====
+package com.aicc.silverlink.domain.notice.entity;
+
+public enum NoticeCategory {
+    NOTICE("怨듭?"),
+    EVENT("?대깽??),
+    NEWS("?댁뒪"),
+    SYSTEM("?쒖뒪??);
+
+    private final String description;
+
+    NoticeCategory(String description) {
+        this.description = description;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+}
+
+
+===== NoticeReadLog.java =====
+package com.aicc.silverlink.domain.notice.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "notice_read_logs")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@IdClass(NoticeReadLogId.class)
+public class NoticeReadLog {
+    @Id
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "notice_id", nullable = false)
+    private Notice notice;
+
+    @Id
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "read_at", nullable = false)
+    private LocalDateTime readAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.readAt == null) {
+            this.readAt = LocalDateTime.now();
+        }
+    }
+
+    public NoticeReadLog(Notice notice, User user) {
+        this.notice = notice;
+        this.user = user;
+        this.readAt = LocalDateTime.now();
+    }
+}
+
+
+===== NoticeReadLogId.java =====
+package com.aicc.silverlink.domain.notice.entity;
+
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+
+import java.io.Serializable;
+
+@NoArgsConstructor
+@AllArgsConstructor
+@EqualsAndHashCode
+public class NoticeReadLogId implements Serializable {
+    private Long notice;
+    private Long user;
+}
+
+
+===== NoticeTargetRole.java =====
+package com.aicc.silverlink.domain.notice.entity;
+
+import com.aicc.silverlink.domain.user.entity.Role;
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "notice_target_roles")
+@Getter
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@IdClass(NoticeTargetRoleId.class)
+public class NoticeTargetRole {
+    @Id
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "notice_id", nullable = false)
+    private Notice notice;
+
+    @Id
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_role", nullable = false)
+    private Role targetRole;
+}
+
+
+===== NoticeTargetRoleId.java =====
+package com.aicc.silverlink.domain.notice.entity;
+
+import com.aicc.silverlink.domain.user.entity.Role;
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+
+import java.io.Serializable;
+
+@NoArgsConstructor
+@AllArgsConstructor
+@EqualsAndHashCode
+public class NoticeTargetRoleId implements Serializable {
+    private Long notice;
+    private Role targetRole;
+}
+
+
+===== Notification.java =====
+package com.aicc.silverlink.domain.notification.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import com.aicc.silverlink.global.common.entity.BaseTimeEntity;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+/**
+ * ?쇰컲 ?뚮┝ ?뷀떚??
+ *
+ * 臾몄쓽 ?듬?, 誘쇱썝 ?듬?, ?묎렐沅뚰븳, ?대떦 諛곗젙, 怨듭??ы빆 ?깆쓽 ?뚮┝
+ */
+@Entity
+@Table(name = "notifications", indexes = {
+        @Index(name = "idx_notif_receiver_read", columnList = "receiver_user_id, is_read, created_at DESC"),
+        @Index(name = "idx_notif_type", columnList = "notification_type"),
+        @Index(name = "idx_notif_reference", columnList = "reference_type, reference_id")
+})
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+@Builder
+public class Notification extends BaseTimeEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "notification_id")
+    private Long id;
+
+    /**
+     * ?섏떊??
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "receiver_user_id", nullable = false)
+    private User receiver;
+
+    /**
+     * ?뚮┝ ?좏삎
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "notification_type", nullable = false, length = 30)
+    private NotificationType notificationType;
+
+    /**
+     * ?뚮┝ ?쒕ぉ
+     */
+    @Column(nullable = false, length = 200)
+    private String title;
+
+    /**
+     * ?뚮┝ ?댁슜
+     */
+    @Column(columnDefinition = "TEXT")
+    private String content;
+
+    /**
+     * 李몄“ ?뚯씠釉????(inquiries, complaints, access_requests ??
+     */
+    @Column(name = "reference_type", length = 50)
+    private String referenceType;
+
+    /**
+     * 李몄“ ?뚯씠釉붿쓽 PK
+     */
+    @Column(name = "reference_id")
+    private Long referenceId;
+
+    /**
+     * ?대룞 URL (?대┃ ???대룞??寃쎈줈)
+     */
+    @Column(name = "link_url", length = 500)
+    private String linkUrl;
+
+    /**
+     * ?쎌쓬 ?щ?
+     */
+    @Column(name = "is_read", nullable = false)
+    @Builder.Default
+    private Boolean isRead = false;
+
+    /**
+     * ?쎌? ?쒓컙
+     */
+    @Column(name = "read_at")
+    private LocalDateTime readAt;
+
+    /**
+     * SMS 諛쒖넚 ?щ?
+     */
+    @Column(name = "sms_sent", nullable = false)
+    @Builder.Default
+    private Boolean smsSent = false;
+
+    /**
+     * SMS 諛쒖넚 ?쒓컙
+     */
+    @Column(name = "sms_sent_at")
+    private LocalDateTime smsSentAt;
+
+    // ========== ?뚮┝ ?좏삎 Enum ==========
+
+    @Getter
+    @RequiredArgsConstructor
+    public enum NotificationType {
+        // 臾몄쓽/誘쇱썝 愿??
+        INQUIRY_NEW("??臾몄쓽 ?깅줉", true),
+        INQUIRY_REPLY("臾몄쓽 ?듬? ?깅줉", true),
+        COMPLAINT_NEW("??誘쇱썝 ?깅줉", true),
+        COMPLAINT_REPLY("誘쇱썝 ?듬? ?깅줉", true),
+
+        // ?묎렐沅뚰븳 愿??
+        ACCESS_REQUEST_NEW("?묎렐沅뚰븳 ?붿껌", false),
+        ACCESS_APPROVED("?묎렐沅뚰븳 ?뱀씤", true),
+        ACCESS_REJECTED("?묎렐沅뚰븳 嫄곗젅", true),
+
+        // ?대떦 諛곗젙 愿??
+        ASSIGNMENT_NEW("?대떦 ?대Ⅴ??諛곗젙", false),
+        ASSIGNMENT_CHANGED("?대떦 蹂寃?, false),
+
+        // 怨듭??ы빆
+        NOTICE_NEW("??怨듭??ы빆", false),
+
+        // 湲닿툒 ?뚮┝ ?곌퀎
+        EMERGENCY_NEW("湲닿툒 ?뚮┝ 諛쒖깮", true),
+        EMERGENCY_RESOLVED("湲닿툒 ?뚮┝ 泥섎━ ?꾨즺", false),
+
+        // ?곷떞??肄붾찘??
+        COUNSELOR_COMMENT("?곷떞??肄붾찘??, false),
+
+        // ?쒖뒪???뚮┝
+        SYSTEM("?쒖뒪???뚮┝", false);
+
+        private final String description;
+        private final boolean smsRequired; // 湲곕낯 SMS 諛쒖넚 ?щ?
+    }
+
+    // ========== 鍮꾩쫰?덉뒪 硫붿꽌??==========
+
+    /**
+     * ?쎌쓬 泥섎━
+     */
+    public void markAsRead() {
+        if (!this.isRead) {
+            this.isRead = true;
+            this.readAt = LocalDateTime.now();
+        }
+    }
+
+    /**
+     * SMS 諛쒖넚 ?꾨즺 泥섎━
+     */
+    public void markSmsSent() {
+        this.smsSent = true;
+        this.smsSentAt = LocalDateTime.now();
+    }
+
+    /**
+     * ?쎌? ?딆? ?뚮┝?몄? ?뺤씤
+     */
+    public boolean isUnread() {
+        return !this.isRead;
+    }
+
+    // ========== ?⑺넗由?硫붿꽌??==========
+
+    /**
+     * 臾몄쓽 ?듬? ?뚮┝ ?앹꽦
+     */
+    public static Notification createInquiryReplyNotification(User receiver, Long inquiryId, String inquiryTitle) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.INQUIRY_REPLY)
+                .title("臾몄쓽???듬????깅줉?섏뿀?듬땲??)
+                .content("'" + truncate(inquiryTitle, 30) + "' 臾몄쓽???듬????깅줉?섏뿀?듬땲??")
+                .referenceType("inquiries")
+                .referenceId(inquiryId)
+                .linkUrl("/inquiries/" + inquiryId)
+                .build();
+    }
+
+    /**
+     * 誘쇱썝 ?듬? ?뚮┝ ?앹꽦
+     */
+    public static Notification createComplaintReplyNotification(User receiver, Long complaintId,
+            String complaintTitle) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.COMPLAINT_REPLY)
+                .title("誘쇱썝???듬????깅줉?섏뿀?듬땲??)
+                .content("'" + truncate(complaintTitle, 30) + "' 誘쇱썝???듬????깅줉?섏뿀?듬땲??")
+                .referenceType("complaints")
+                .referenceId(complaintId)
+                .linkUrl("/complaints/" + complaintId)
+                .build();
+    }
+
+    /**
+     * ?묎렐沅뚰븳 ?뱀씤 ?뚮┝ ?앹꽦
+     */
+    public static Notification createAccessApprovedNotification(User receiver, Long requestId, String elderlyName) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.ACCESS_APPROVED)
+                .title("?묎렐沅뚰븳???뱀씤?섏뿀?듬땲??)
+                .content(elderlyName + " ?대Ⅴ?좎쓽 誘쇨컧?뺣낫 ?대엺 沅뚰븳???뱀씤?섏뿀?듬땲??")
+                .referenceType("access_requests")
+                .referenceId(requestId)
+                .linkUrl("/access-requests/" + requestId)
+                .build();
+    }
+
+    /**
+     * ?묎렐沅뚰븳 嫄곗젅 ?뚮┝ ?앹꽦
+     */
+    public static Notification createAccessRejectedNotification(User receiver, Long requestId, String elderlyName,
+            String reason) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.ACCESS_REJECTED)
+                .title("?묎렐沅뚰븳??嫄곗젅?섏뿀?듬땲??)
+                .content(elderlyName + " ?대Ⅴ?좎쓽 誘쇨컧?뺣낫 ?대엺 沅뚰븳 ?붿껌??嫄곗젅?섏뿀?듬땲?? ?ъ쑀: " + truncate(reason, 50))
+                .referenceType("access_requests")
+                .referenceId(requestId)
+                .linkUrl("/access-requests/" + requestId)
+                .build();
+    }
+
+    /**
+     * ???묎렐沅뚰븳 ?붿껌 ?뚮┝ (愿由ъ옄?먭쾶)
+     */
+    public static Notification createAccessRequestNotification(User receiver, Long requestId, String requesterName,
+            String elderlyName) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.ACCESS_REQUEST_NEW)
+                .title("???묎렐沅뚰븳 ?붿껌")
+                .content(requesterName + "?섏씠 " + elderlyName + " ?대Ⅴ?좎쓽 誘쇨컧?뺣낫 ?대엺???붿껌?덉뒿?덈떎.")
+                .referenceType("access_requests")
+                .referenceId(requestId)
+                .linkUrl("/admin/access-requests/" + requestId)
+                .build();
+    }
+
+    /**
+     * ?대떦 諛곗젙 ?뚮┝ (?곷떞?ъ뿉寃?
+     */
+    public static Notification createAssignmentNotification(User receiver, Long assignmentId, String elderlyName) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.ASSIGNMENT_NEW)
+                .title("???대떦 ?대Ⅴ?좎씠 諛곗젙?섏뿀?듬땲??)
+                .content(elderlyName + " ?대Ⅴ?좎씠 ?대떦 ?대Ⅴ?좎쑝濡?諛곗젙?섏뿀?듬땲??")
+                .referenceType("assignments")
+                .referenceId(assignmentId)
+                .linkUrl("/counselor/elderly/" + assignmentId)
+                .build();
+    }
+
+    /**
+     * 怨듭??ы빆 ?뚮┝
+     */
+    public static Notification createNoticeNotification(User receiver, Long noticeId, String noticeTitle) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.NOTICE_NEW)
+                .title("??怨듭??ы빆")
+                .content("'" + truncate(noticeTitle, 50) + "' 怨듭??ы빆???깅줉?섏뿀?듬땲??")
+                .referenceType("notices")
+                .referenceId(noticeId)
+                .linkUrl("/notices/" + noticeId)
+                .build();
+    }
+
+    /**
+     * ??臾몄쓽 ?뚮┝ (愿由ъ옄?먭쾶)
+     */
+    public static Notification createInquiryNewNotification(User receiver, Long inquiryId, String writerName,
+            String inquiryTitle) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.INQUIRY_NEW)
+                .title("??臾몄쓽媛 ?깅줉?섏뿀?듬땲??)
+                .content(writerName + "?섏씠 '" + truncate(inquiryTitle, 30) + "' 臾몄쓽瑜??깅줉?덉뒿?덈떎.")
+                .referenceType("inquiries")
+                .referenceId(inquiryId)
+                .linkUrl("/admin/inquiries/" + inquiryId)
+                .build();
+    }
+
+    /**
+     * ??誘쇱썝 ?뚮┝ (愿由ъ옄?먭쾶)
+     */
+    public static Notification createComplaintNewNotification(User receiver, Long complaintId, String writerName,
+            String complaintTitle) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.COMPLAINT_NEW)
+                .title("??誘쇱썝???깅줉?섏뿀?듬땲??)
+                .content(writerName + "?섏씠 '" + truncate(complaintTitle, 30) + "' 誘쇱썝???깅줉?덉뒿?덈떎.")
+                .referenceType("complaints")
+                .referenceId(complaintId)
+                .linkUrl("/admin/complaints/" + complaintId)
+                .build();
+    }
+
+    /**
+     * 湲닿툒 ?뚮┝ ?앹꽦 (?섏떊?먯슜)
+     */
+    public static Notification createEmergencyNewNotification(User receiver, Long alertId, String elderlyName,
+            String severityDescription, String linkUrl) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.EMERGENCY_NEW)
+                .title("湲닿툒 ?뚮┝: " + elderlyName)
+                .content(elderlyName + " ?대Ⅴ?좎뿉寃?" + severityDescription + " ?곹솴??媛먯??섏뿀?듬땲??")
+                .referenceType("emergency_alerts")
+                .referenceId(alertId)
+                .linkUrl(linkUrl)
+                .build();
+    }
+
+    /**
+     * ?쒖뒪???뚮┝
+     */
+    public static Notification createSystemNotification(User receiver, String title, String content) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.SYSTEM)
+                .title(title)
+                .content(content)
+                .build();
+    }
+
+    /**
+     * ?곷떞??肄붾찘???뚮┝ ?앹꽦
+     */
+    public static Notification createCounselorCommentNotification(User receiver, Long callId, String elderlyName) {
+        return Notification.builder()
+                .receiver(receiver)
+                .notificationType(NotificationType.COUNSELOR_COMMENT)
+                .title("?덈줈???곷떞??肄붾찘??)
+                .content(elderlyName + " ?대Ⅴ?좎쓽 ?듯솕 湲곕줉???덈줈??肄붾찘?멸? ?깅줉?섏뿀?듬땲??")
+                .referenceType("call_records")
+                .referenceId(callId)
+                .linkUrl("/guardian/calls/" + callId)
+                .build();
+    }
+
+    // ========== ?좏떥 硫붿꽌??==========
+
+    private static String truncate(String text, int maxLength) {
+        if (text == null)
+            return "";
+        if (text.length() <= maxLength)
+            return text;
+        return text.substring(0, maxLength) + "...";
+    }
+}
+
+===== Policy.java =====
+package com.aicc.silverlink.domain.policy.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "policies", indexes = {
+        @Index(name = "idx_policy_key", columnList = "policy_key")
+})
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@EntityListeners(AuditingEntityListener.class)
+@Builder
+@AllArgsConstructor
+public class Policy {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "policy_id")
+    private Long id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "policy_key", nullable = false, length = 50)
+    private PolicyType policyType;
+
+    @Column(name = "version", nullable = false, length = 20)
+    private String version;
+
+    @Lob
+    @Column(name = "content", nullable = false, columnDefinition = "LONGTEXT")
+    private String content;
+
+    @Column(name = "is_mandatory", nullable = false)
+    private boolean isMandatory;
+
+    // ?뮕 異붽?: DDL???덈뜕 ?ㅻ챸 ?꾨뱶 (nullable)
+    @Column(name = "description")
+    private String description;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    // ?뮕 [?듭떖 蹂寃쎌궗?? updatedAt ?꾨뱶 異붽?
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
+    private User createdBy;
+
+    // ?뮕 [?듭떖 蹂寃쎌궗?? create 硫붿꽌?쒖뿉?????좎쭨瑜?紐⑤몢 珥덇린??
+    public static Policy create(PolicyType policyType, String version, String content,
+                                boolean isMandatory, String description, User createdBy) {
+        LocalDateTime now = LocalDateTime.now();
+        return Policy.builder()
+                .policyType(policyType)
+                .version(version)
+                .content(content)
+                .isMandatory(isMandatory)
+                .description(description) // ?뮕 異붽?
+                .createdBy(createdBy)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+    }
+}
+
+===== PolicyType.java =====
+package com.aicc.silverlink.domain.policy.entity;
+
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
+@Getter
+@RequiredArgsConstructor
+public enum PolicyType {
+    // 1. [湲곕낯] ?쒕퉬???댁슜?쎄? (?꾩닔)
+    TERMS_OF_SERVICE("?쒕퉬???댁슜?쎄?"),
+
+    // 2. [湲곕낯] 媛쒖씤?뺣낫 泥섎━諛⑹묠 (?꾩닔)
+
+    PRIVACY_POLICY("媛쒖씤?뺣낫 泥섎━諛⑹묠"),
+
+    // 3. [?뱁솕] 誘쇨컧?뺣낫 泥섎━ ?숈쓽 (?꾩닔)
+
+    SENSITIVE_INFO_CONSENT("誘쇨컧?뺣낫 泥섎━ ?숈쓽"),
+
+    // 4. [?뱁솕] 媛쒖씤?뺣낫 ?????쒓났 ?숈쓽 (?꾩닔/?좏깮)
+
+    THIRD_PARTY_PROVISION_CONSENT("媛쒖씤?뺣낫 ?????쒓났 ?숈쓽"),
+
+    // 5. [?덉쟾] ?꾩튂湲곕컲 ?쒕퉬???댁슜?쎄? (?좏깮/?꾩닔)
+
+    LOCATION_BASED_SERVICE("?꾩튂湲곕컲 ?쒕퉬???댁슜?쎄?"),
+
+    // 6. [?뚮┝] 蹂듭? ?뺣낫 諛??쒗깮 ?섏떊 ?숈쓽 (?좏깮)
+
+    WELFARE_BENEFITS_NOTIFICATION("蹂듭? ?뺣낫 諛??쒗깮 ?뚮┝ ?섏떊 ?숈쓽");
+
+    private final String description;
+}
+
+===== AuditLog.java =====
+package com.aicc.silverlink.domain.session.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.Instant;
+
+/**
+ * ?몄뀡 蹂댁븞 媛먯궗 濡쒓렇 ?뷀떚??
+ * SessionSecurityEvent瑜?DB???곸냽?뷀븯??而댄뵆?쇱씠?몄뒪 ???諛?蹂댁븞 遺꾩꽍???쒖슜?⑸땲??
+ */
+@Entity(name = "SessionAuditLog")
+@Table(name = "audit_log", indexes = {
+        @Index(name = "idx_audit_user_id", columnList = "userId"),
+        @Index(name = "idx_audit_event_type", columnList = "eventType"),
+        @Index(name = "idx_audit_created_at", columnList = "createdAt")
+})
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+@Builder
+public class AuditLog {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, length = 50)
+    private String eventType;
+
+    @Column(nullable = false)
+    private Long userId;
+
+    @Column(length = 64)
+    private String sessionId;
+
+    @Column(length = 45)
+    private String ipAddress;
+
+    @Column(length = 500)
+    private String userAgent;
+
+    @Column(length = 64)
+    private String deviceId;
+
+    @Column(nullable = false)
+    private Instant createdAt;
+
+    @Column(length = 500)
+    private String detail;
+
+    /**
+     * SessionSecurityEvent濡쒕???AuditLog瑜??앹꽦?⑸땲??
+     */
+    public static AuditLog from(com.aicc.silverlink.domain.session.event.SessionSecurityEvent event) {
+        return AuditLog.builder()
+                .eventType(event.type().name())
+                .userId(event.userId())
+                .sessionId(event.sessionId())
+                .ipAddress(event.deviceInfo() != null ? event.deviceInfo().ipAddress() : null)
+                .userAgent(event.deviceInfo() != null ? event.deviceInfo().userAgent() : null)
+                .deviceId(event.deviceInfo() != null ? event.deviceInfo().deviceId() : null)
+                .createdAt(event.timestamp())
+                .build();
+    }
+
+    /**
+     * ?몄뀡 留뚮즺 ?대깽??濡쒓렇瑜??앹꽦?⑸땲??
+     */
+    public static AuditLog expired(String sid) {
+        return AuditLog.builder()
+                .eventType("SESSION_EXPIRED")
+                .userId(0L)
+                .sessionId(sid)
+                .createdAt(Instant.now())
+                .detail("Redis TTL???섑븳 ?먮룞 留뚮즺")
+                .build();
+    }
+}
+
+
+===== AuthSession.java =====
+package com.aicc.silverlink.domain.session.entity;
+
+import com.aicc.silverlink.domain.user.entity.User;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "auth_sessions")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class AuthSession {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "session_id")
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "refresh_jti", nullable = false, length = 64)
+    private String refreshJti;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private SessionStatus status;
+
+    @Column(name = "issued_at", nullable = false, updatable = false)
+    private LocalDateTime issuedAt;
+
+    @Column(name = "last_seen_at")
+    private LocalDateTime lastSeenAt;
+
+    @Column(name = "expires_at", nullable = false)
+    private LocalDateTime expiresAt;
+
+    @Column(name = "revoked_at")
+    private LocalDateTime revokedAt;
+
+    @Column(name = "ip_address", length = 45)
+    private String ipAddress;
+
+    @Column(name = "user_agent", length = 255)
+    private String userAgent;
+
+    @Column(name = "active_user_id", insertable = false, updatable = false)
+    private Long activeUserId;
+
+    @PrePersist
+    protected void onCreate() {
+        this.issuedAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = SessionStatus.ACTIVE;
+        }
+    }
+
+    public enum SessionStatus {
+        ACTIVE, REVOKED, EXPIRED
+    }
+}
+
+
+===== AdministrativeDivision.java =====
+package com.aicc.silverlink.domain.system.entity;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "administrative_division")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class AdministrativeDivision {
+
+    @Id
+    @Column(name = "adm_code")
+    private Long admCode;
+
+    @Column(name = "sido_code", nullable = false, length = 2)
+    private String sidoCode;
+
+    @Column(name = "sigungu_code", length = 3)
+    private String sigunguCode;
+
+    @Column(name = "dong_code", length = 3)
+    private String dongCode;
+
+    @Column(name = "sido_name", nullable = false, length = 20)
+    private String sidoName;
+
+    @Column(name = "sigungu_name", length = 20)
+    private String sigunguName;
+
+    @Column(name = "dong_name", length = 20)
+    private String dongName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DivisionLevel level;
+
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
+
+    /**
+     * ?됱젙援ъ뿭 ?앹꽦??(?대떦 援ъ뿭???앹꽦???좎쭨)
+     */
+    @Column(name = "created_at", nullable = false, updatable = false)
+
+    private LocalDateTime createdAt;
+
+    @Column(name = "established_at")
+    private LocalDate establishedAt;
+
+    /**
+     * ?됱젙援ъ뿭 留먯냼??(?대떦 援ъ뿭???먯????좎쭨)
+     */
+    @Column(name = "abolished_at")
+    private LocalDate abolishedAt;
+
+
+
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    public enum DivisionLevel {
+        SIDO, SIGUNGU, DONG
+    }
+
+    @Builder
+    public AdministrativeDivision(Long admCode, String sidoCode, String sigunguCode,
+                                  String dongCode, String sidoName, String sigunguName,
+                                  String dongName, DivisionLevel level,
+                                  LocalDate establishedAt, LocalDate abolishedAt) {
+        this.admCode = admCode;
+        this.sidoCode = sidoCode;
+        this.sigunguCode = sigunguCode;
+        this.dongCode = dongCode;
+        this.sidoName = sidoName;
+        this.sigunguName = sigunguName;
+        this.dongName = dongName;
+        this.level = level;
+        this.establishedAt = establishedAt;
+        this.abolishedAt = abolishedAt;
+        this.isActive = (abolishedAt == null);
+    }
+
+    public String getFullAddress() {
+        StringBuilder sb = new StringBuilder();
+        if (sidoName != null) sb.append(sidoName);
+        if (sigunguName != null) sb.append(" ").append(sigunguName);
+        if (dongName != null) sb.append(" ").append(dongName);
+        return sb.toString().trim();
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+}
+
+===== OfflineRegistrationLog.java =====
+//package com.aicc.silverlink.domain.system.entity;
+//
+//import com.aicc.silverlink.domain.user.entity.User;
+//import jakarta.persistence.*;
+//import lombok.AccessLevel;
+//import lombok.Getter;
+//import lombok.NoArgsConstructor;
+//import java.time.LocalDateTime;
+//
+//@Entity
+//@Table(name = "offline_registration_logs")
+//@Getter
+//@NoArgsConstructor(access = AccessLevel.PROTECTED)
+//public class OfflineRegistrationLog {
+//    @Id
+//    @GeneratedValue(strategy = GenerationType.IDENTITY)
+//    @Column(name = "reg_log_id")
+//    private Long id;
+//
+//    @ManyToOne(fetch = FetchType.LAZY)
+//    @JoinColumn(name = "registrar_user_id", nullable = false)
+//    private User registrar;
+//
+//    @ManyToOne(fetch = FetchType.LAZY)
+//    @JoinColumn(name = "target_user_id", nullable = false)
+//    private User target;
+//
+//    @Enumerated(EnumType.STRING)
+//    @Column(name = "channel", nullable = false)
+//    private Channel channel;
+//
+//    @Column(name = "memo", length = 500)
+//    private String memo;
+//
+//    @Column(name = "created_at", nullable = false, updatable = false)
+//    private LocalDateTime createdAt;
+//
+//    @PrePersist
+//    protected void onCreate() {
+//        this.createdAt = LocalDateTime.now();
+//        if (this.channel == null) {
+//            this.channel = Channel.CENTER_VISIT;
+//        }
+//    }
+//
+//    public enum Channel {
+//        CENTER_VISIT
+//    }
+//}
+
+
+===== Role.java =====
+package com.aicc.silverlink.domain.user.entity;
+
+public enum Role {
+    ADMIN,COUNSELOR,GUARDIAN,ELDERLY;
+
+    public String asAuthority(){
+        return "ROLE_" + name();
+    }
+}
+
+
+===== User.java =====
+package com.aicc.silverlink.domain.user.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "users")
+@Getter
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "user_id")
+    private Long id;
+
+    @Column(name = "login_id", nullable = false, unique = true, length = 50)
+    private String loginId;
+
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String passwordHash;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false)
+    private Role role;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private UserStatus status;
+
+    @Column(name = "name", nullable = false, length = 50)
+    private String name;
+
+    @Column(name = "phone", nullable = false, length = 20)
+    private String phone;
+
+    @Column(name = "email", length = 100)
+    private String email;
+
+    @Column(name = "phone_verified", nullable = false)
+    private boolean phoneVerified;
+
+    @Column(name = "phone_verified_at")
+    private LocalDateTime phoneVerifiedAt;
+
+    @Column(name = "created_by")
+    private Long createdBy;
+
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = UserStatus.ACTIVE;
+        }
+    }
+
+    public void updateLastLogin() {
+        this.lastLoginAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public static User createLocal(String loginId, String encodedPassword, String name, String phone, String email,
+            Role role, Long createdBy) {
+        validate(loginId, encodedPassword, name, phone, role);
+        return User.builder()
+                .loginId(loginId.trim())
+                .passwordHash(encodedPassword)
+                .name(name)
+                .phone(normalizePhone(phone))
+                .email(email)
+                .role(role)
+                .status(UserStatus.ACTIVE)
+                .phoneVerified(false)
+                .createdBy(createdBy)
+                .build();
+    }
+
+    // 而⑦듃濡ㅻ윭 ?깆뿉???꾩떆 媛앹껜 ?앹꽦??(DB ??μ슜 ?꾨떂)
+    public static User createFake(Long id, Role role) {
+        return User.builder()
+                .id(id)
+                .role(role)
+                .loginId("fake")
+                .passwordHash("fake")
+                .name("fake")
+                .phone("01000000000")
+                .status(UserStatus.ACTIVE)
+                .build();
+    }
+
+    public void changePassword(String newEncodedPassword) {
+        if (newEncodedPassword == null || newEncodedPassword.isBlank()) {
+            throw new IllegalArgumentException("PASSWORD_INVALID");
+        }
+        this.passwordHash = newEncodedPassword;
+    }
+
+    public void suspend() {
+        this.status = UserStatus.LOCKED;
+    }
+
+    public void activate() {
+        this.status = UserStatus.ACTIVE;
+    }
+
+    public void softDelete() {
+        this.status = UserStatus.DELETED;
+        this.deletedAt = LocalDateTime.now();
+    }
+
+    public boolean isActive() {
+        return this.status == UserStatus.ACTIVE;
+    }
+
+    private static void validate(String loginId, String encodedPassword, String name, String phone, Role role) {
+        if (loginId == null || loginId.isBlank())
+            throw new IllegalArgumentException("LOGIN_ID_INVALID");
+        if (encodedPassword == null || encodedPassword.isBlank())
+            throw new IllegalArgumentException("PASSWORD_INVALID");
+        if (name == null || name.isBlank())
+            throw new IllegalArgumentException("NAME_INVALID");
+        if (phone == null || phone.isBlank())
+            throw new IllegalArgumentException("PHONE_INVALID");
+        if (role == null)
+            throw new IllegalArgumentException("ROLE_INVALID");
+    }
+
+    private static String normalizePhone(String phone) {
+        return phone.replaceAll("[^0-9]", "");
+    }
+
+    public void markPhoneVerified() {
+        this.phoneVerified = true;
+        this.phoneVerifiedAt = LocalDateTime.now();
+    }
+
+    public void updateName(String name) {
+        if (name == null || name.isBlank())
+            throw new IllegalArgumentException("NAME_INVALID");
+        this.name = name.trim();
+    }
+
+    public void updateEmail(String email) {
+        this.email = (email == null || email.isBlank()) ? null : email.trim();
+    }
+
+    // User.java??異붽?
+    public void updatePhone(String phone) {
+        if (phone == null || phone.isBlank())
+            throw new IllegalArgumentException("PHONE_INVALID");
+        this.phone = normalizePhone(phone); // ??????レ옄留??④린?꾨줉 ?뺢퇋??
+    }
+
+    // ?쒕퉬???덉씠?댁뿉???명븯寃??곌린 ?꾪빐 ?듯빀 硫붿꽌?쒕? 留뚮뱶??寃껊룄 ?ㅻТ ?곸엯?덈떎.
+    public void updateProfile(String name, String phone, String email) {
+        updateName(name);
+        updatePhone(phone);
+        updateEmail(email);
+    }
+
+}
+
+
+===== UserStatus.java =====
+package com.aicc.silverlink.domain.user.entity;
+
+public enum UserStatus {
+    ACTIVE,
+    INACTIVE,
+    LOCKED,
+    DELETED
+}
+
+
+===== Source.java =====
+package com.aicc.silverlink.domain.welfare.entity;
+
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
+@Getter
+@RequiredArgsConstructor
+public enum Source {
+    CENTRAL("以묒븰遺泥?),
+    LOCAL("吏?먯껜");
+
+    private final String description;
+}
+
+===== Welfare.java =====
+package com.aicc.silverlink.domain.welfare.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "welfare_services") // SQL???뚯씠釉붾챸怨??쇱튂
+@Getter
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
+@Builder
+@Setter
+@AllArgsConstructor(access = AccessLevel.PROTECTED)
+public class Welfare {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "welfare_service_id") // PK 而щ읆紐?紐낆떆
+    private Long id;
+
+    @Column(name = "serv_id", nullable = false, length = 50)
+    private String servId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false) // ENUM('CENTRAL', 'LOCAL')
+    private Source source;
+
+    @Column(name = "serv_nm", length = 255)
+    private String servNm;
+
+    @Column(name = "jur_mnof_nm", length = 255)
+    private String jurMnofNm;
+
+    @Column(name = "serv_dgst", columnDefinition = "TEXT")
+    private String servDgst;
+
+    @Column(name = "target_dtl_cn", columnDefinition = "TEXT")
+    private String targetDtlCn;
+
+    @Column(name = "slct_crit_cn", columnDefinition = "TEXT")
+    private String slctCritCn;
+
+    @Column(name = "alw_serv_cn", columnDefinition = "TEXT")
+    private String alwServCn;
+
+    @Column(name = "rprs_ctadr", length = 100)
+    private String rprsCtadr;
+
+    @Column(name = "serv_dtl_link", columnDefinition = "TEXT") // ?꾨뱶紐?dtl ?뺤씤
+    private String servDtlLink;
+
+    @Column(name = "district_code", length = 20)
+    private String districtCode;
+
+    @Column(name = "category", length = 50)
+    private String category;
+
+    @Builder.Default
+    @Column(name = "is_active", nullable = false) // TINYINT(1) 留ㅽ븨
+    private boolean isActive = true;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        // 蹂꾨룄 ?ㅼ젙 ?놁쑝硫?湲곕낯媛?true ?좎?
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+}
+
+===== BaseTimeEntity.java =====
+package com.aicc.silverlink.global.common.entity;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.EntityListeners;
+import jakarta.persistence.MappedSuperclass;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import lombok.Getter;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import java.time.LocalDateTime;
+
+@Getter
+@MappedSuperclass
+@EntityListeners(AuditingEntityListener.class)
+public abstract class BaseTimeEntity {
+
+    @CreatedDate
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    public void prePersist() {
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
+        if (this.updatedAt == null) {
+            this.updatedAt = LocalDateTime.now();
+        }
+    }
+
+    @PreUpdate
+    public void preUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+}
+
+

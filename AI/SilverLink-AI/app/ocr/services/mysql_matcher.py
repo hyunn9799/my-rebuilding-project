@@ -15,6 +15,8 @@ from app.ocr.services.drug_dictionary_index import DrugDictionaryIndex
 class MySQLMatcher:
     """MySQL 기반 순차 매칭"""
 
+    MYSQL_FUZZY_POOL_LIMIT = 50
+
     def __init__(
         self,
         drug_repository: DrugRepository,
@@ -148,7 +150,7 @@ class MySQLMatcher:
                 alias_conflict=alias_conflict,
             )
 
-        # Stage 6: fuzzy match (Levenshtein)
+        # Stage 6: fuzzy match (Levenshtein) — ngram 후보 축소 후 적용
         fuzzy_candidates = self._try_fuzzy(normalized_name) if include_fuzzy else []
         candidates.extend(fuzzy_candidates)
         best = self._get_best(candidates)
@@ -259,13 +261,19 @@ class MySQLMatcher:
         ]
 
     def _try_fuzzy(self, name: str) -> List[MatchCandidate]:
-        """fuzzy match using rapidfuzz Levenshtein"""
-        all_drugs = self.repo.fetch_all_for_fuzzy()
-        if not all_drugs:
+        """fuzzy match — ngram 후보 축소 후 rapidfuzz 적용.
+
+        전체 DB fetch(fetch_all_for_fuzzy) 대신, MySQL ngram FULLTEXT INDEX로
+        후보를 먼저 축소한 뒤 축소된 후보군에만 fuzzy scoring을 수행한다.
+        """
+        # ngram으로 후보 축소 (MySQL FULLTEXT INDEX 사용)
+        ngram_results = self.repo.ngram_match(name)
+        if not ngram_results:
             return []
 
         candidates = []
-        for drug in all_drugs:
+        pool = ngram_results[: self.MYSQL_FUZZY_POOL_LIMIT]
+        for drug, _ngram_score in pool:
             target = drug.item_name_normalized or drug.item_name
             # rapidfuzz ratio (0~100) → 0.0~1.0
             ratio = fuzz.ratio(name, target) / 100.0
@@ -286,6 +294,7 @@ class MySQLMatcher:
                             "partial_ratio": round(partial, 3),
                             "source": "mysql_fallback",
                             "match_method": "mysql_fuzzy",
+                            "candidate_pool_size": len(ngram_results),
                         },
                     )
                 )

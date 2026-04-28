@@ -17,6 +17,7 @@ class FakeDrugRepository:
         self.alias_results = []
         self.error_alias_results = []
         self.prefix_results = []
+        self.ngram_results = []
 
     def exact_match(self, name: str):
         self.calls.append("exact")
@@ -36,11 +37,7 @@ class FakeDrugRepository:
 
     def ngram_match(self, name: str):
         self.calls.append("ngram")
-        return []
-
-    def fetch_all_for_fuzzy(self):
-        self.calls.append("fuzzy")
-        return []
+        return self.ngram_results
 
 
 def test_mysql_matcher_uses_alias_before_prefix():
@@ -163,3 +160,20 @@ def test_error_alias_conflict_detected():
 
     assert result.alias_conflict is True
     assert result.method == "error_alias"
+
+
+def test_mysql_fallback_fuzzy_does_not_call_fetch_all():
+    """LocalIndex 미사용 fallback에서도 fetch_all_for_fuzzy가 호출되지 않고
+    ngram_match 기반 fuzzy가 동작하는지 검증."""
+    repo = FakeDrugRepository()
+    # dictionary_index=None → include_fuzzy=True 경로
+    matcher = MySQLMatcher(repo, threshold=0.7)
+
+    result = matcher.match("존재하지않는약품명")
+
+    # fetch_all_for_fuzzy는 더 이상 호출되지 않음
+    # _try_fuzzy 내부에서 ngram_match를 한번 더 호출함
+    # 기본 fallback 경로: exact → alias → error_alias → prefix → ngram → fuzzy(ngram)
+    assert "fuzzy" not in repo.calls
+    # ngram은 Stage 5에서 1번, _try_fuzzy에서 1번 = 총 2번 호출
+    assert repo.calls.count("ngram") == 2

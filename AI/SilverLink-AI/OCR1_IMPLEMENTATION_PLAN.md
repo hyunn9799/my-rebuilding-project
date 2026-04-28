@@ -125,6 +125,33 @@ Python OCR compile: passed
 ```
 - Vite 빌드는 browserslist 데이터 오래됨, 일부 chunk 500KB 초과 경고를 출력했지만 실패하지 않았다.
 
+### 2026-04-28 Phase 4-A 안전성 보완 완료
+
+- `mysql_matcher.py`의 `_try_fuzzy` 5000건 full scan 조회를 제거하고 `ngram_match` 기반으로 후보 풀(최대 50건)을 축소한 후 fuzzy 검색을 수행하도록 개선했다.
+- VectorDB/RAG 검색 결과만으로 약품이 `MATCHED` 상태로 자동 확정되는 것을 방지하고 강제로 `NEED_USER_CONFIRMATION` 상태로 전환하는 안전 장치를 추가했다.
+- `DrugDictionaryIndex.ensure_loaded()`에 `threading.Lock`과 원자적 참조 교체(atomic swap)를 도입하여 멀티 스레드 환경의 race condition을 해결했다.
+- `drug_repository.py`의 위험한 메서드(`fetch_all_for_fuzzy`)를 Deprecated 처리했다.
+- 모든 단위 테스트 통과(28건) 확인.
+
+### 2026-04-28 Phase 5 OCR 결과 저장 및 사용자 확인 API 완료
+
+- OCR 파이프라인 결과를 저장할 `OcrResultRecord` 모델 및 `OcrResultRepository` 생성 (`medication_ocr_results` 테이블).
+- 파이프라인에서 응답에 영향 없이 결과를 자동 저장하는 비차단(non-blocking) 저장 로직 추가.
+- `medication_alias_suggestions` 테이블 추가. 사용자가 PENDING 상태의 alias로 자동 제안(`AliasSuggestionRepository`)할 수 있도록 구현. 동일 제안 시 `frequency` 자동 증가 기능.
+- `POST /ocr/confirm-medication` 및 `GET /ocr/pending-confirmations/{elderly_user_id}` API 구현.
+- `PipelineResult` 및 API 응답 스키마에 `request_id` 추가하여 기존 구조 유지.
+
+### 2026-04-28 Phase 6 Optional LLM Structured Extraction 완료
+
+- `LLMExtractor` 신규 모듈 추가 (`app/ocr/services/llm_extractor.py`).
+  - OCR 원문에서 약품명/용량/제형을 JSON 구조화 추출.
+  - Hallucination 방지: 추출된 약품명이 OCR 원문에 존재하는지 검증 (`_verify_in_source`).
+  - 실패 시 빈 리스트 반환 (non-blocking fallback).
+- `NormalizedDrug.source` 필드 추가 (`normalizer` / `llm_hint`).
+- 파이프라인에 Stage 2.5 LLM extraction 단계 삽입. 기존 정규화 결과에 없는 후보만 merge.
+- `_decide()`에 LLM hint 단독 후보 자동확정 방지 guard 추가.
+- 단위 테스트 9건 추가. 전체 37건 통과.
+
 ## 1. 현재 판단
 
 `OCR1.txt`의 방향은 현재 SilverLink 구조에서 구현 가능하다.
@@ -425,7 +452,7 @@ drug detail summary: 1일 또는 master 변경 시 무효화
 - Redis 장애 시 MySQL 경로로 fallback
 - Redis가 정답 저장소처럼 쓰이지 않음
 
-## Phase 5. OCR raw/result 저장과 사용자 확인 루프
+## Phase 5. OCR raw/result 저장과 사용자 확인 루프 (완료)
 
 목표:
 
@@ -437,7 +464,7 @@ drug detail summary: 1일 또는 master 변경 시 무효화
 - `MedicationOcrLog` 확장 또는 별도 result table 추가
 - AI response 전체 evidence 저장
 - 사용자 선택 후보 저장
-- FE 확인 UI 개선
+- FE 확인 UI 개선 (현재 API 단계까지만 진행)
 - 사용자가 고른 후보를 alias/error_alias 개선 데이터로 활용할 수 있게 로그화
 
 완료 기준:
@@ -446,7 +473,7 @@ drug detail summary: 1일 또는 master 변경 시 무효화
 - `NEED_USER_CONFIRMATION` 상태에서 사용자가 후보 선택 가능
 - 사용자 선택 결과가 추후 alias 개선 데이터로 남음
 
-## Phase 6. Optional LLM structured extraction
+## Phase 6. Optional LLM structured extraction (완료)
 
 목표:
 
@@ -496,14 +523,14 @@ Luxia OCR
 
 ## 8. 예상 작업 순서 요약
 
-1. 현재 MVP 안정화
-2. MySQL alias/error alias 테이블 추가
-3. 검색 순서 재정렬
-4. pseudo-confidence scorer 분리
-5. Redis cache-aside 추가
-6. OCR 로그/evidence 저장
-7. FE 사용자 확인 UI 강화
-8. Optional LLM structured extraction 도입
+1. 현재 MVP 안정화 (완료)
+2. MySQL alias/error alias 테이블 추가 (완료)
+3. 검색 순서 재정렬 (완료)
+4. pseudo-confidence scorer 분리 (완료)
+5. OCR 로그/evidence 저장 및 확인 루프 API (완료)
+6. Optional LLM structured extraction 도입 (완료)
+7. Redis cache-aside 추가 (향후 과제)
+8. FE 사용자 확인 UI 강화 (향후 과제)
 
 ## 9. 결론
 

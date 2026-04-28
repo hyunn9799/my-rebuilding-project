@@ -231,7 +231,19 @@ class DrugRepository:
                 connection.close()
 
     def fetch_all_for_fuzzy(self, limit: int = 5000) -> List[DrugInfo]:
-        """fuzzy 매칭용 전체 약품명 목록 조회"""
+        """[DEPRECATED] fuzzy 매칭용 전체 약품명 목록 조회.
+
+        경고: 이 메서드는 매 호출마다 최대 limit건을 DB에서 가져옵니다.
+        LocalDrugIndex가 활성화된 환경에서는 호출되지 않아야 합니다.
+        mysql_matcher의 _try_fuzzy는 이제 ngram_match 기반이므로
+        이 메서드는 향후 제거 예정입니다.
+        """
+        import warnings
+        warnings.warn(
+            "fetch_all_for_fuzzy is deprecated; use ngram_match + fuzzy scoring instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         connection = None
         try:
             connection = self._get_connection()

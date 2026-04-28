@@ -154,3 +154,56 @@ async def test_pipeline_requires_confirmation_on_strength_mismatch():
     assert result.decision_status == "NEED_USER_CONFIRMATION"
     assert result.requires_user_confirmation is True
     assert result.identified_drugs[0].evidence["strength_match"] is False
+
+
+@pytest.mark.asyncio
+async def test_pipeline_vectordb_only_candidate_not_auto_matched():
+    """VectorDB 후보만 있을 때 MATCHED가 아닌 NEED_USER_CONFIRMATION."""
+
+    class VectorOnlyMySQLMatcher:
+        """MySQL에서 매칭 실패 → VectorDB만 후보를 제공하는 시나리오."""
+        def match(self, normalized_name: str) -> MatchResult:
+            return MatchResult(candidates=[], best_score=0.0, method="none")
+
+    class HighScoreVectorMatcher:
+        """높은 코사인 유사도로 후보를 반환하는 VectorMatcher."""
+        def match(self, normalized_name: str, top_k: int = 5) -> MatchResult:
+            return MatchResult(
+                candidates=[
+                    MatchCandidate(
+                        drug_info=DrugInfo(
+                            item_seq="VEC-001",
+                            item_name="타이레놀정500mg",
+                            item_name_normalized="타이레놀정500mg",
+                            entp_name="한국존슨앤드존슨",
+                            efcy_qesitm="해열 및 진통",
+                            use_method_qesitm="1회 1~2정",
+                            atpn_qesitm="용량 주의",
+                        ),
+                        score=0.92,
+                        method="vector",
+                        evidence={
+                            "source": "vector_db",
+                            "distance": 0.08,
+                            "name_match": 0.92,
+                        },
+                    )
+                ],
+                best_score=0.92,
+                method="vector",
+            )
+
+    pipeline = MedicationPipeline(
+        text_normalizer=TextNormalizer(),
+        mysql_matcher=VectorOnlyMySQLMatcher(),
+        vector_matcher=HighScoreVectorMatcher(),
+        rule_validator=RuleValidator(),
+        llm_descriptor=FakeLLMDescriptor(),
+        match_threshold=0.7,
+    )
+
+    result = await pipeline.process("타이레놀정 500mg")
+
+    # VectorDB 후보만으로는 자동 확정되지 않아야 함
+    assert result.decision_status == "NEED_USER_CONFIRMATION"
+    assert result.requires_user_confirmation is True

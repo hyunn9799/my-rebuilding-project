@@ -85,6 +85,7 @@ class NormalizedDrug(BaseModel):
     form_type: Optional[str] = Field(None, description="제형 (정, 캡슐, 시럽 등)")
     original: str = Field(..., description="원본 텍스트")
     ocr_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="OCR 평균 신뢰도")
+    source: str = Field("normalizer", description="후보 출처 (normalizer/llm_hint)")
 
 
 class PipelineStage(BaseModel):
@@ -109,3 +110,4 @@ class PipelineResult(BaseModel):
     match_confidence: float = Field(0.0, ge=0.0, le=1.0)
     requires_user_confirmation: bool = Field(False)
     decision_reasons: List[str] = Field(default_factory=list)
+    request_id: Optional[str] = Field(None, description="결과 추적용 UUID")

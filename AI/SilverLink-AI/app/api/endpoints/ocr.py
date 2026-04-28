@@ -1,3 +1,4 @@
+from typing import List
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -5,11 +6,16 @@ from app.core.container import Container
 from app.core.middleware import inject_ocr
 from app.ocr.services.ocr_service import OcrService
 from app.ocr.services.medication_pipeline import MedicationPipeline
+from app.ocr.repository.ocr_result_repository import OcrResultRepository
+from app.ocr.repository.alias_suggestion_repository import AliasSuggestionRepository
 from app.ocr.schema.medication_schema import (
     MedicationOCRRequest,
     MedicationOCRResponse,
     MedicationInfo,
     PipelineStageInfo,
+    ConfirmMedicationRequest,
+    ConfirmMedicationResponse,
+    PendingConfirmationItem,
 )
 from app.ocr.model.drug_model import OCRToken
 
@@ -116,6 +122,7 @@ async def validate_medication_ocr(
             match_confidence=result.match_confidence,
             requires_user_confirmation=result.requires_user_confirmation,
             decision_reasons=result.decision_reasons,
+            request_id=result.request_id,
         )
 
         if not response.success and response.error_message:
@@ -132,4 +139,112 @@ async def validate_medication_ocr(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"OCR 파이프라인 오류: {str(e)}"
+        )
+
+
+@router.post(
+    "/confirm-medication",
+    response_model=ConfirmMedicationResponse,
+    summary="사용자 약품 후보 확인/거부",
+    description="OCR 결과에서 사용자가 후보를 선택하거나 거부합니다.",
+)
+@inject_ocr
+async def confirm_medication(
+    request: ConfirmMedicationRequest,
+    ocr_result_repo: OcrResultRepository = Depends(Provide[Container.ocr_result_repository]),
+    alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
+):
+    try:
+        # 1. OCR 결과 조회
+        ocr_result = ocr_result_repo.get_result(request.request_id)
+        if not ocr_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"OCR 결과를 찾을 수 없습니다: {request.request_id}",
+            )
+
+        if ocr_result.user_confirmed is not None:
+            return ConfirmMedicationResponse(
+                success=False,
+                message="이미 확인된 요청입니다.",
+            )
+
+        # 2. 사용자 확인 결과 업데이트
+        updated = ocr_result_repo.update_user_confirmation(
+            request_id=request.request_id,
+            selected_item_seq=request.selected_item_seq,
+            confirmed=request.confirmed,
+        )
+        if not updated:
+            return ConfirmMedicationResponse(
+                success=False,
+                message="확인 결과 업데이트 실패",
+            )
+
+        # 3. 확정 시 alias 제안 저장 (PENDING)
+        alias_created = False
+        if (
+            request.confirmed
+            and ocr_result.decision_status in ("NEED_USER_CONFIRMATION", "AMBIGUOUS")
+            and ocr_result.raw_ocr_text
+        ):
+            from app.ocr.services.text_normalizer import TextNormalizer
+
+            normalizer = TextNormalizer()
+            normalized = normalizer.normalize(ocr_result.raw_ocr_text)
+            if normalized:
+                alias_text = normalized[0].name
+                alias_created = alias_suggestion_repo.save_suggestion(
+                    item_seq=request.selected_item_seq,
+                    alias_name=alias_text,
+                    alias_normalized=alias_text,
+                    source_request_id=request.request_id,
+                    source="user_feedback",
+                )
+
+        return ConfirmMedicationResponse(
+            success=True,
+            message="확인 처리 완료" if request.confirmed else "거부 처리 완료",
+            alias_suggestion_created=alias_created,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"확인 처리 오류: {str(e)}",
+        )
+
+
+@router.get(
+    "/pending-confirmations/{elderly_user_id}",
+    response_model=List[PendingConfirmationItem],
+    summary="미확인 OCR 결과 목록 조회",
+    description="사용자 확인이 필요한 OCR 결과 목록을 조회합니다.",
+)
+@inject_ocr
+async def get_pending_confirmations(
+    elderly_user_id: int,
+    ocr_result_repo: OcrResultRepository = Depends(Provide[Container.ocr_result_repository]),
+):
+    try:
+        records = ocr_result_repo.get_pending_confirmations(elderly_user_id)
+        return [
+            PendingConfirmationItem(
+                request_id=r.request_id,
+                raw_ocr_text=r.raw_ocr_text,
+                decision_status=r.decision_status,
+                match_confidence=r.match_confidence,
+                best_drug_name=r.best_drug_name,
+                best_drug_item_seq=r.best_drug_item_seq,
+                candidates=r.candidates,
+                created_at=r.created_at.isoformat() if r.created_at else None,
+            )
+            for r in records
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"미확인 목록 조회 오류: {str(e)}",
         )

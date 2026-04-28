@@ -65,6 +65,7 @@ class MedicationOCRResponse(BaseModel):
     match_confidence: float = Field(0.0, description="최종 매칭 신뢰도")
     requires_user_confirmation: bool = Field(False, description="사용자 확인 필요 여부")
     decision_reasons: List[str] = Field(default_factory=list, description="최종 판정 사유")
+    request_id: Optional[str] = Field(None, description="결과 추적용 UUID")
 
 
 class MedicationScheduleRequest(BaseModel):
@@ -77,3 +78,32 @@ class MedicationScheduleRequest(BaseModel):
     start_date: Optional[date] = Field(None, description="시작일")
     end_date: Optional[date] = Field(None, description="종료일")
     reminder: bool = Field(True, description="알림 여부")
+
+
+class ConfirmMedicationRequest(BaseModel):
+    """사용자 약품 후보 확인 요청"""
+    request_id: str = Field(..., description="OCR 결과 request_id (UUID)", alias="requestId")
+    selected_item_seq: str = Field(..., description="사용자가 선택한 item_seq", alias="selectedItemSeq")
+    confirmed: bool = Field(True, description="True=확정, False=거부")
+
+    class Config:
+        populate_by_name = True
+
+
+class ConfirmMedicationResponse(BaseModel):
+    """사용자 약품 후보 확인 응답"""
+    success: bool = Field(..., description="처리 성공 여부")
+    message: str = Field("", description="결과 메시지")
+    alias_suggestion_created: bool = Field(False, description="alias 제안 생성 여부")
+
+
+class PendingConfirmationItem(BaseModel):
+    """미확인 건 목록 항목"""
+    request_id: str = Field(..., description="OCR 결과 request_id")
+    raw_ocr_text: str = Field(..., description="OCR 원문")
+    decision_status: str = Field(..., description="판정 상태")
+    match_confidence: float = Field(0.0, description="매칭 신뢰도")
+    best_drug_name: Optional[str] = Field(None, description="최고 후보 약품명")
+    best_drug_item_seq: Optional[str] = Field(None, description="최고 후보 item_seq")
+    candidates: List[dict] = Field(default_factory=list, description="후보 목록")
+    created_at: Optional[str] = Field(None, description="생성 시점")
