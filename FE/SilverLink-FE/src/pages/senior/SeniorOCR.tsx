@@ -54,8 +54,12 @@ interface MedicationInfo {
   category?: string;
   item_seq?: string;
   entp_name?: string;
+  item_ingr_name?: string;
+  spclty_pblc?: string;
+  prduct_type?: string;
   match_score?: number;
   match_method?: string;
+  purpose?: string;
   evidence?: Record<string, unknown>;
   validation_messages?: string[];
 }
@@ -64,7 +68,7 @@ interface ValidationResult {
   success: boolean;
   medications: MedicationInfo[];
   raw_ocr_text: string;
-  llm_analysis: string;
+  llm_analysis?: string;
   warnings: string[];
   error_message?: string;
   decision_status?: "MATCHED" | "AMBIGUOUS" | "LOW_CONFIDENCE" | "NOT_FOUND" | "NEED_USER_CONFIRMATION" | string;
@@ -841,6 +845,16 @@ const SeniorOCR = () => {
                                 복용법: {med.instructions}
                               </p>
                             )}
+                            {med.item_ingr_name && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                💊 성분: {med.item_ingr_name.length > 50 ? med.item_ingr_name.slice(0, 50) + '...' : med.item_ingr_name}
+                              </p>
+                            )}
+                            {med.purpose && (
+                              <p className="text-xs text-muted-foreground">
+                                📋 {med.purpose.length > 60 ? med.purpose.slice(0, 60) + '...' : med.purpose}
+                              </p>
+                            )}
                             <div className="mt-2 flex flex-wrap gap-1">
                               {med.match_method && (
                                 <Badge variant="outline" className="text-xs">
@@ -855,6 +869,11 @@ const SeniorOCR = () => {
                               {med.entp_name && (
                                 <Badge variant="outline" className="text-xs">
                                   {med.entp_name}
+                                </Badge>
+                              )}
+                              {med.spclty_pblc && (
+                                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                  {med.spclty_pblc}
                                 </Badge>
                               )}
                             </div>
@@ -1120,7 +1139,22 @@ const SeniorOCR = () => {
                             용량: {med.dosage}
                           </p>
                         )}
+                        {med.entp_name && (
+                          <p className="text-xs text-muted-foreground">
+                            업체: {med.entp_name}
+                          </p>
+                        )}
+                        {med.item_ingr_name && (
+                          <p className="text-xs text-muted-foreground">
+                            성분: {med.item_ingr_name.length > 40 ? med.item_ingr_name.slice(0, 40) + '...' : med.item_ingr_name}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-1 mt-1">
+                          {med.spclty_pblc && (
+                            <Badge variant="outline" className="text-xs">
+                              {med.spclty_pblc}
+                            </Badge>
+                          )}
                           {med.times.map(time => (
                             <Badge key={time} variant="secondary" className="text-xs">
                               {timeLabels[time] || time}

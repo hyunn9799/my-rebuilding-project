@@ -77,6 +77,8 @@ class LLMDescriptor:
 약품 {i}:
 - 약품명: {drug.item_name}
 - 업체: {drug.entp_name or '정보 없음'}
+- 성분: {drug.item_ingr_name or '정보 없음'}
+- 전문/일반: {drug.spclty_pblc or '정보 없음'}
 - 효능효과: {(drug.efcy_qesitm or '정보 없음')[:300]}
 - 사용법: {(drug.use_method_qesitm or '정보 없음')[:300]}
 - 주의사항: {(drug.atpn_qesitm or '정보 없음')[:300]}
@@ -176,7 +178,10 @@ class LLMDescriptor:
                 "dosage": None,
                 "times": ["morning", "evening"],
                 "instructions": drug.use_method_qesitm[:200] if drug.use_method_qesitm else None,
-                "purpose": drug.efcy_qesitm[:200] if drug.efcy_qesitm else None,
+                "purpose": (
+                    drug.efcy_qesitm[:200] if drug.efcy_qesitm
+                    else (f"성분: {drug.item_ingr_name}" if drug.item_ingr_name else None)
+                ),
                 "caution": drug.atpn_qesitm[:200] if drug.atpn_qesitm else None,
             })
 

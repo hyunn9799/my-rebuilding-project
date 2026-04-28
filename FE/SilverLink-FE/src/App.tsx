@@ -57,6 +57,7 @@ const SensitiveInfoManagement = lazy(() => import("./pages/admin/SensitiveInfoMa
 const MemberRegistration = lazy(() => import("./pages/admin/MemberRegistration"));
 const AdminProfile = lazy(() => import("./pages/admin/AdminProfile"));
 const PolicyManagement = lazy(() => import("./pages/admin/PolicyManagement"));
+const AliasManagement = lazy(() => import("./pages/admin/AliasManagement"));
 
 const FAQPage = lazy(() => import("./pages/faq/FAQPage"));
 const NotificationHistory = lazy(() => import("./pages/common/NotificationHistory"));
@@ -155,6 +156,7 @@ const App = () => (
                       <Route path="/admin/facilities" element={<ProtectedRoute allowedRoles={["ADMIN"]}><FacilityManagement /></ProtectedRoute>} />
                       <Route path="/admin/counselors/new" element={<ProtectedRoute allowedRoles={["ADMIN"]}><CounselorRegistration /></ProtectedRoute>} />
                       <Route path="/admin/welfare-services" element={<ProtectedRoute allowedRoles={["ADMIN"]}><WelfareServiceManagement /></ProtectedRoute>} />
+                      <Route path="/admin/alias-management" element={<ProtectedRoute allowedRoles={["ADMIN"]}><AliasManagement /></ProtectedRoute>} />
 
                       <Route path="/admin/complaints" element={<ProtectedRoute allowedRoles={["ADMIN"]}><ComplaintManagement /></ProtectedRoute>} />
                       <Route path="/admin/sensitive-info" element={<ProtectedRoute allowedRoles={["ADMIN"]}><SensitiveInfoManagement /></ProtectedRoute>} />

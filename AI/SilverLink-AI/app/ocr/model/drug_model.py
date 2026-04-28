@@ -19,12 +19,24 @@ class OCRToken(BaseModel):
 
 
 class DrugInfo(BaseModel):
-    """e약은요 API 기반 약품 마스터 데이터"""
+    """의약품 허가정보 API(DrugPrdtPrmsnInfoService07) 기반 약품 마스터 데이터"""
     id: Optional[int] = None
     item_seq: str = Field(..., description="품목기준코드")
     item_name: str = Field(..., description="약품명")
     item_name_normalized: Optional[str] = Field(None, description="정규화된 약품명")
+    item_eng_name: Optional[str] = Field(None, description="영문 약품명")
     entp_name: Optional[str] = Field(None, description="업체명")
+    entp_eng_name: Optional[str] = Field(None, description="영문 업체명")
+    item_ingr_name: Optional[str] = Field(None, description="주성분명")
+    item_ingr_cnt: Optional[int] = Field(None, description="성분 수")
+    spclty_pblc: Optional[str] = Field(None, description="전문/일반 구분")
+    prduct_type: Optional[str] = Field(None, description="제품 유형")
+    item_permit_date: Optional[str] = Field(None, description="허가일자")
+    cancel_date: Optional[str] = Field(None, description="취소일자")
+    cancel_name: Optional[str] = Field(None, description="취소 상태")
+    edi_code: Optional[str] = Field(None, description="EDI 코드")
+    permit_kind_code: Optional[str] = Field(None, description="허가 종류")
+    # e약은요 보강용 필드 (새 API에는 없음, 향후 보강 시 사용)
     efcy_qesitm: Optional[str] = Field(None, description="효능효과")
     use_method_qesitm: Optional[str] = Field(None, description="사용법")
     atpn_qesitm: Optional[str] = Field(None, description="주의사항")
@@ -32,6 +44,7 @@ class DrugInfo(BaseModel):
     se_qesitm: Optional[str] = Field(None, description="부작용")
     deposit_method_qesitm: Optional[str] = Field(None, description="보관법")
     item_image: Optional[str] = Field(None, description="이미지URL")
+    is_active: int = Field(1, description="활성 여부 (CANCEL 시 0)")
 
 
 class ScoreBreakdown(BaseModel):

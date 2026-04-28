@@ -1,6 +1,6 @@
 """
-공공데이터포털 e약은요 API 클라이언트
-https://www.data.go.kr/data/15075057/openapi.do
+공공데이터포털 의약품 허가정보 API 클라이언트
+DrugPrdtPrmsnInfoService07 / getDrugPrdtPrmsnInq07
 """
 import httpx
 from typing import Optional, List, Dict, Any
@@ -10,12 +10,13 @@ from app.core.config import configs
 
 
 class DrugApiClient:
-    """식품의약품안전처 의약품개요정보(e약은요) API"""
+    """식품의약품안전처 의약품 제품 허가 정보 API (DrugPrdtPrmsnInfoService07)"""
 
-    BASE_URL = "http://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList"
-
-    def __init__(self, service_key: Optional[str] = None):
+    def __init__(self, service_key: Optional[str] = None, endpoint: Optional[str] = None):
         self.service_key = service_key or configs.DRUG_API_SERVICE_KEY
+        self.endpoint = endpoint or configs.DRUG_API_ENDPOINT
+        self.BASE_URL = f"{self.endpoint}/getDrugPrdtPrmsnInq07"
+
         if not self.service_key:
             raise ValueError("DRUG_API_SERVICE_KEY 환경변수가 설정되지 않았습니다.")
 
@@ -23,18 +24,19 @@ class DrugApiClient:
         """약품명으로 조회"""
         params = {
             "serviceKey": self.service_key,
-            "itemName": item_name,
             "pageNo": str(page_no),
             "numOfRows": str(num_of_rows),
             "type": "json",
         }
+        if item_name:
+            params["item_name"] = item_name
         return await self._request(params)
 
     async def search_by_seq(self, item_seq: str) -> Dict[str, Any]:
         """품목기준코드로 조회"""
         params = {
             "serviceKey": self.service_key,
-            "itemSeq": item_seq,
+            "item_seq": item_seq,
             "type": "json",
         }
         return await self._request(params)
@@ -43,7 +45,7 @@ class DrugApiClient:
         """업체명으로 조회"""
         params = {
             "serviceKey": self.service_key,
-            "entpName": entp_name,
+            "entp_name": entp_name,
             "pageNo": str(page_no),
             "numOfRows": str(num_of_rows),
             "type": "json",
@@ -68,17 +70,17 @@ class DrugApiClient:
                 "type": "json",
             }
             if item_name:
-                params["itemName"] = item_name
+                params["item_name"] = item_name
 
             data = await self._request(params)
             items = self._extract_items(data)
 
             if not items:
-                logger.info(f"e약은요 API: 페이지 {page_no}에서 데이터 없음, 수집 종료")
+                logger.info(f"허가정보 API: 페이지 {page_no}에서 데이터 없음, 수집 종료")
                 break
 
             all_items.extend(items)
-            logger.info(f"e약은요 API: 페이지 {page_no} - {len(items)}건 수집 (누적 {len(all_items)}건)")
+            logger.info(f"허가정보 API: 페이지 {page_no} - {len(items)}건 수집 (누적 {len(all_items)}건)")
 
             # 총 건수 확인
             total_count = self._extract_total_count(data)
@@ -103,15 +105,15 @@ class DrugApiClient:
                 # XML 에러 응답 체크 (API 키 오류 등)
                 content_type = response.headers.get("content-type", "")
                 if "xml" in content_type:
-                    logger.error(f"e약은요 API XML 응답 (인증키 오류 가능): {response.text[:500]}")
+                    logger.error(f"허가정보 API XML 응답 (인증키 오류 가능): {response.text[:500]}")
                     return {}
 
                 return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"e약은요 API HTTP 에러: {e.response.status_code} - {e}")
+            logger.error(f"허가정보 API HTTP 에러: {e.response.status_code} - {e}")
             return {}
         except Exception as e:
-            logger.error(f"e약은요 API 요청 실패: {e}")
+            logger.error(f"허가정보 API 요청 실패: {e}")
             return {}
 
     def _extract_items(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:

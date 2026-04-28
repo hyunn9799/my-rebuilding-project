@@ -826,32 +826,45 @@ CREATE TABLE IF NOT EXISTS `offline_registration_logs` (
 -- - BE의 medication_ocr_logs (Phase 6 #27)와 별개의 AI 전용 테이블입니다.
 -- - 컬럼명은 drug_repository.py, seed_aliases.py,
 --   alias_suggestion_repository.py, ocr_result_repository.py의 실제 쿼리와 일치합니다.
--- - medications_master는 e약은요 API 기반 약품 마스터입니다.
+-- - medications_master는 의약품 제품 허가정보 API(DrugPrdtPrmsnInfoService07) 기반 약품 마스터입니다.
 -- - UNIQUE 기준은 정규화된 값(normalized)으로 통일했습니다.
 
--- 48. 의약품 마스터 (e약은요 API)
+-- 48. 의약품 마스터 (DrugPrdtPrmsnInfoService07 API)
 CREATE TABLE IF NOT EXISTS `medications_master` (
     `id` BIGINT NOT NULL AUTO_INCREMENT,
-    `item_seq` VARCHAR(20) NOT NULL COMMENT '품목기준코드',
-    `item_name` VARCHAR(200) NOT NULL COMMENT '약품명',
-    `item_name_normalized` VARCHAR(200) NULL COMMENT '정규화된 약품명',
-    `entp_name` VARCHAR(200) NULL COMMENT '업체명',
-    `efcy_qesitm` TEXT NULL COMMENT '효능효과',
-    `use_method_qesitm` TEXT NULL COMMENT '사용법',
-    `atpn_qesitm` TEXT NULL COMMENT '주의사항',
-    `intrc_qesitm` TEXT NULL COMMENT '상호작용',
-    `se_qesitm` TEXT NULL COMMENT '부작용',
-    `deposit_method_qesitm` TEXT NULL COMMENT '보관법',
-    `item_image` VARCHAR(500) NULL COMMENT '이미지URL',
+    `item_seq` VARCHAR(20) NOT NULL COMMENT '품목기준코드 (ITEM_SEQ)',
+    `item_name` VARCHAR(500) NOT NULL COMMENT '약품명 (ITEM_NAME)',
+    `item_name_normalized` VARCHAR(500) NULL COMMENT '정규화된 약품명',
+    `item_eng_name` VARCHAR(500) NULL COMMENT '영문 약품명 (ITEM_ENG_NAME)',
+    `entp_name` VARCHAR(200) NULL COMMENT '업체명 (ENTP_NAME)',
+    `entp_eng_name` VARCHAR(200) NULL COMMENT '영문 업체명 (ENTP_ENG_NAME)',
+    `item_ingr_name` TEXT NULL COMMENT '주성분명 (ITEM_INGR_NAME)',
+    `item_ingr_cnt` INT NULL COMMENT '성분 수 (ITEM_INGR_CNT)',
+    `spclty_pblc` VARCHAR(50) NULL COMMENT '전문/일반 구분 (SPCLTY_PBLC)',
+    `prduct_type` VARCHAR(100) NULL COMMENT '제품 유형 (PRDUCT_TYPE)',
+    `item_permit_date` VARCHAR(20) NULL COMMENT '허가일자 (ITEM_PERMIT_DATE)',
+    `cancel_date` VARCHAR(20) NULL COMMENT '취소일자 (CANCEL_DATE)',
+    `cancel_name` VARCHAR(50) NULL COMMENT '취소 상태 (CANCEL_NAME)',
+    `edi_code` VARCHAR(500) NULL COMMENT 'EDI 코드 (EDI_CODE)',
+    `permit_kind_code` VARCHAR(50) NULL COMMENT '허가 종류 (PERMIT_KIND_CODE)',
+    `efcy_qesitm` TEXT NULL COMMENT '효능효과 (e약은요 보강용, 새 API에는 없음)',
+    `use_method_qesitm` TEXT NULL COMMENT '사용법 (e약은요 보강용)',
+    `atpn_qesitm` TEXT NULL COMMENT '주의사항 (e약은요 보강용)',
+    `intrc_qesitm` TEXT NULL COMMENT '상호작용 (e약은요 보강용)',
+    `se_qesitm` TEXT NULL COMMENT '부작용 (e약은요 보강용)',
+    `deposit_method_qesitm` TEXT NULL COMMENT '보관법 (e약은요 보강용)',
+    `item_image` VARCHAR(500) NULL COMMENT '이미지URL (BIG_PRDT_IMG_URL)',
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '활성 여부 (CANCEL_DATE 있으면 0)',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_medications_master_item_seq` (`item_seq`),
-    INDEX `idx_item_name` (`item_name`),
-    INDEX `idx_item_name_normalized` (`item_name_normalized`),
+    INDEX `idx_item_name` (`item_name`(200)),
+    INDEX `idx_item_name_normalized` (`item_name_normalized`(200)),
+    INDEX `idx_is_active` (`is_active`),
     FULLTEXT INDEX `ft_item_name` (`item_name`) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='e약은요 API 기반 의약품 마스터';
+  COMMENT='의약품 허가정보 API 기반 의약품 마스터';
 
 -- 49. 의약품 별칭
 -- [FIX #2] UNIQUE를 alias_normalized 기준으로 변경

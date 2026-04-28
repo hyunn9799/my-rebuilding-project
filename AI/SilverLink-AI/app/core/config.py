@@ -121,6 +121,10 @@ class Configs(BaseSettings):
 
     # OCR 약 식별 파이프라인
     DRUG_API_SERVICE_KEY: str = os.getenv("DRUG_API_SERVICE_KEY", "")
+    DRUG_API_ENDPOINT: str = os.getenv(
+        "DRUG_API_ENDPOINT",
+        "https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07"
+    )
     CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
     DRUG_COLLECTION_NAME: str = os.getenv("DRUG_COLLECTION_NAME", "drug_embeddings")
     DRUG_MATCH_THRESHOLD: float = float(os.getenv("DRUG_MATCH_THRESHOLD", "0.7"))

@@ -194,12 +194,22 @@ async def confirm_medication(
             normalized = normalizer.normalize(ocr_result.raw_ocr_text)
             if normalized:
                 alias_text = normalized[0].name
+                # best_drug_item_seq와 사용자 선택이 다르면 error_alias,
+                # 같으면 alias (이름 변형)로 분류
+                stype = "error_alias"
+                if (
+                    ocr_result.best_drug_item_seq
+                    and ocr_result.best_drug_item_seq == request.selected_item_seq
+                ):
+                    stype = "alias"
+
                 alias_created = alias_suggestion_repo.save_suggestion(
                     item_seq=request.selected_item_seq,
                     alias_name=alias_text,
                     alias_normalized=alias_text,
                     source_request_id=request.request_id,
                     source="user_feedback",
+                    suggestion_type=stype,
                 )
 
         return ConfirmMedicationResponse(
@@ -247,4 +257,118 @@ async def get_pending_confirmations(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"미확인 목록 조회 오류: {str(e)}",
+        )
+
+
+# ============================================================
+# 관리자 Alias 승인/거부 API (Phase 9)
+# ============================================================
+
+
+@router.get(
+    "/admin/alias-suggestions",
+    summary="[관리자] PENDING alias 제안 목록 (페이징)",
+    description="관리자가 검토할 alias 제안 목록을 페이징으로 조회합니다.",
+)
+@inject_ocr
+async def get_alias_suggestions(
+    page: int = 1,
+    size: int = 20,
+    review_status: str = "PENDING",
+    alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
+):
+    try:
+        result = alias_suggestion_repo.get_pending_suggestions_paged(
+            page=page,
+            size=size,
+            review_status=review_status if review_status != "ALL" else None,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"alias 제안 조회 오류: {str(e)}",
+        )
+
+
+@router.put(
+    "/admin/alias-suggestions/{suggestion_id}/approve",
+    summary="[관리자] alias 제안 승인",
+    description="PENDING 상태의 alias 제안을 승인하여 실제 alias/error_alias 테이블에 등록합니다.",
+)
+@inject_ocr
+async def approve_alias_suggestion(
+    suggestion_id: int,
+    reviewed_by: str = "admin",
+    alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
+):
+    try:
+        result = alias_suggestion_repo.approve_suggestion(
+            suggestion_id=suggestion_id,
+            reviewed_by=reviewed_by,
+        )
+        if not result["success"]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["message"],
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"alias 제안 승인 오류: {str(e)}",
+        )
+
+
+@router.put(
+    "/admin/alias-suggestions/{suggestion_id}/reject",
+    summary="[관리자] alias 제안 거부",
+    description="PENDING 상태의 alias 제안을 거부합니다.",
+)
+@inject_ocr
+async def reject_alias_suggestion(
+    suggestion_id: int,
+    reviewed_by: str = "admin",
+    alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
+):
+    try:
+        result = alias_suggestion_repo.reject_suggestion(
+            suggestion_id=suggestion_id,
+            reviewed_by=reviewed_by,
+        )
+        if not result["success"]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["message"],
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"alias 제안 거부 오류: {str(e)}",
+        )
+
+
+@router.post(
+    "/admin/reload-dictionary",
+    summary="[관리자] LocalDrugIndex 리로드",
+    description="alias 승인 후 인메모리 약품 인덱스를 갱신합니다.",
+)
+@inject_ocr
+async def reload_dictionary(
+    pipeline: MedicationPipeline = Depends(Provide[Container.medication_pipeline]),
+):
+    try:
+        if hasattr(pipeline, 'drug_index') and pipeline.drug_index:
+            pipeline.drug_index.reload()
+            return {"success": True, "message": "LocalDrugIndex 리로드 완료"}
+        return {"success": True, "message": "DrugIndex 없음 (리로드 불필요)"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"리로드 오류: {str(e)}",
         )

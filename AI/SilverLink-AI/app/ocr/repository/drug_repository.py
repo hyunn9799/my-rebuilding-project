@@ -31,7 +31,18 @@ class DrugRepository:
             item_seq=row.get("item_seq", ""),
             item_name=row.get("item_name", ""),
             item_name_normalized=row.get("item_name_normalized"),
+            item_eng_name=row.get("item_eng_name"),
             entp_name=row.get("entp_name"),
+            entp_eng_name=row.get("entp_eng_name"),
+            item_ingr_name=row.get("item_ingr_name"),
+            item_ingr_cnt=row.get("item_ingr_cnt"),
+            spclty_pblc=row.get("spclty_pblc"),
+            prduct_type=row.get("prduct_type"),
+            item_permit_date=row.get("item_permit_date"),
+            cancel_date=row.get("cancel_date"),
+            cancel_name=row.get("cancel_name"),
+            edi_code=row.get("edi_code"),
+            permit_kind_code=row.get("permit_kind_code"),
             efcy_qesitm=row.get("efcy_qesitm"),
             use_method_qesitm=row.get("use_method_qesitm"),
             atpn_qesitm=row.get("atpn_qesitm"),
@@ -39,6 +50,7 @@ class DrugRepository:
             se_qesitm=row.get("se_qesitm"),
             deposit_method_qesitm=row.get("deposit_method_qesitm"),
             item_image=row.get("item_image"),
+            is_active=row.get("is_active", 1),
         )
 
     # ────────────────────────────────────────────
@@ -53,7 +65,8 @@ class DrugRepository:
             with connection.cursor() as cursor:
                 sql = """
                     SELECT * FROM medications_master
-                    WHERE item_name = %s OR item_name_normalized = %s
+                    WHERE is_active = 1
+                      AND (item_name = %s OR item_name_normalized = %s)
                     LIMIT 5
                 """
                 cursor.execute(sql, (name, name))
@@ -164,7 +177,8 @@ class DrugRepository:
             with connection.cursor() as cursor:
                 sql = """
                     SELECT * FROM medications_master
-                    WHERE item_name LIKE %s OR item_name_normalized LIKE %s
+                    WHERE is_active = 1
+                      AND (item_name LIKE %s OR item_name_normalized LIKE %s)
                     LIMIT 10
                 """
                 pattern = f"{name}%"
@@ -204,7 +218,8 @@ class DrugRepository:
                 sql = """
                     SELECT *, MATCH(item_name) AGAINST(%s IN BOOLEAN MODE) AS relevance
                     FROM medications_master
-                    WHERE MATCH(item_name) AGAINST(%s IN BOOLEAN MODE)
+                    WHERE is_active = 1
+                      AND MATCH(item_name) AGAINST(%s IN BOOLEAN MODE)
                     ORDER BY relevance DESC
                     LIMIT 10
                 """
@@ -269,7 +284,7 @@ class DrugRepository:
         try:
             connection = self._get_connection()
             with connection.cursor() as cursor:
-                cursor.execute("SELECT * FROM medications_master")
+                cursor.execute("SELECT * FROM medications_master WHERE is_active = 1")
                 rows = cursor.fetchall()
                 return [self._row_to_drug_info(r) for r in rows]
         except Exception as e:
@@ -331,27 +346,50 @@ class DrugRepository:
             with connection.cursor() as cursor:
                 sql = """
                     INSERT INTO medications_master
-                    (item_seq, item_name, item_name_normalized, entp_name,
+                    (item_seq, item_name, item_name_normalized, item_eng_name,
+                     entp_name, entp_eng_name,
+                     item_ingr_name, item_ingr_cnt, spclty_pblc, prduct_type,
+                     item_permit_date, cancel_date, cancel_name,
+                     edi_code, permit_kind_code,
                      efcy_qesitm, use_method_qesitm, atpn_qesitm,
-                     intrc_qesitm, se_qesitm, deposit_method_qesitm, item_image)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     intrc_qesitm, se_qesitm, deposit_method_qesitm,
+                     item_image, is_active)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON DUPLICATE KEY UPDATE
                         item_name = VALUES(item_name),
                         item_name_normalized = VALUES(item_name_normalized),
+                        item_eng_name = VALUES(item_eng_name),
                         entp_name = VALUES(entp_name),
+                        entp_eng_name = VALUES(entp_eng_name),
+                        item_ingr_name = VALUES(item_ingr_name),
+                        item_ingr_cnt = VALUES(item_ingr_cnt),
+                        spclty_pblc = VALUES(spclty_pblc),
+                        prduct_type = VALUES(prduct_type),
+                        item_permit_date = VALUES(item_permit_date),
+                        cancel_date = VALUES(cancel_date),
+                        cancel_name = VALUES(cancel_name),
+                        edi_code = VALUES(edi_code),
+                        permit_kind_code = VALUES(permit_kind_code),
                         efcy_qesitm = VALUES(efcy_qesitm),
                         use_method_qesitm = VALUES(use_method_qesitm),
                         atpn_qesitm = VALUES(atpn_qesitm),
                         intrc_qesitm = VALUES(intrc_qesitm),
                         se_qesitm = VALUES(se_qesitm),
                         deposit_method_qesitm = VALUES(deposit_method_qesitm),
-                        item_image = VALUES(item_image)
+                        item_image = VALUES(item_image),
+                        is_active = VALUES(is_active)
                 """
                 cursor.execute(sql, (
                     drug.item_seq, drug.item_name, drug.item_name_normalized,
-                    drug.entp_name, drug.efcy_qesitm, drug.use_method_qesitm,
+                    drug.item_eng_name, drug.entp_name, drug.entp_eng_name,
+                    drug.item_ingr_name, drug.item_ingr_cnt,
+                    drug.spclty_pblc, drug.prduct_type,
+                    drug.item_permit_date, drug.cancel_date, drug.cancel_name,
+                    drug.edi_code, drug.permit_kind_code,
+                    drug.efcy_qesitm, drug.use_method_qesitm,
                     drug.atpn_qesitm, drug.intrc_qesitm, drug.se_qesitm,
                     drug.deposit_method_qesitm, drug.item_image,
+                    drug.is_active,
                 ))
                 connection.commit()
                 return True
@@ -371,29 +409,52 @@ class DrugRepository:
             with connection.cursor() as cursor:
                 sql = """
                     INSERT INTO medications_master
-                    (item_seq, item_name, item_name_normalized, entp_name,
+                    (item_seq, item_name, item_name_normalized, item_eng_name,
+                     entp_name, entp_eng_name,
+                     item_ingr_name, item_ingr_cnt, spclty_pblc, prduct_type,
+                     item_permit_date, cancel_date, cancel_name,
+                     edi_code, permit_kind_code,
                      efcy_qesitm, use_method_qesitm, atpn_qesitm,
-                     intrc_qesitm, se_qesitm, deposit_method_qesitm, item_image)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     intrc_qesitm, se_qesitm, deposit_method_qesitm,
+                     item_image, is_active)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON DUPLICATE KEY UPDATE
                         item_name = VALUES(item_name),
                         item_name_normalized = VALUES(item_name_normalized),
+                        item_eng_name = VALUES(item_eng_name),
                         entp_name = VALUES(entp_name),
+                        entp_eng_name = VALUES(entp_eng_name),
+                        item_ingr_name = VALUES(item_ingr_name),
+                        item_ingr_cnt = VALUES(item_ingr_cnt),
+                        spclty_pblc = VALUES(spclty_pblc),
+                        prduct_type = VALUES(prduct_type),
+                        item_permit_date = VALUES(item_permit_date),
+                        cancel_date = VALUES(cancel_date),
+                        cancel_name = VALUES(cancel_name),
+                        edi_code = VALUES(edi_code),
+                        permit_kind_code = VALUES(permit_kind_code),
                         efcy_qesitm = VALUES(efcy_qesitm),
                         use_method_qesitm = VALUES(use_method_qesitm),
                         atpn_qesitm = VALUES(atpn_qesitm),
                         intrc_qesitm = VALUES(intrc_qesitm),
                         se_qesitm = VALUES(se_qesitm),
                         deposit_method_qesitm = VALUES(deposit_method_qesitm),
-                        item_image = VALUES(item_image)
+                        item_image = VALUES(item_image),
+                        is_active = VALUES(is_active)
                 """
                 for drug in drugs:
                     try:
                         cursor.execute(sql, (
                             drug.item_seq, drug.item_name, drug.item_name_normalized,
-                            drug.entp_name, drug.efcy_qesitm, drug.use_method_qesitm,
+                            drug.item_eng_name, drug.entp_name, drug.entp_eng_name,
+                            drug.item_ingr_name, drug.item_ingr_cnt,
+                            drug.spclty_pblc, drug.prduct_type,
+                            drug.item_permit_date, drug.cancel_date, drug.cancel_name,
+                            drug.edi_code, drug.permit_kind_code,
+                            drug.efcy_qesitm, drug.use_method_qesitm,
                             drug.atpn_qesitm, drug.intrc_qesitm, drug.se_qesitm,
                             drug.deposit_method_qesitm, drug.item_image,
+                            drug.is_active,
                         ))
                         count += 1
                     except Exception as e:
@@ -420,9 +481,20 @@ class DrugRepository:
                     CREATE TABLE IF NOT EXISTS medications_master (
                         id                    BIGINT AUTO_INCREMENT PRIMARY KEY,
                         item_seq              VARCHAR(20) UNIQUE NOT NULL COMMENT '품목기준코드',
-                        item_name             VARCHAR(200) NOT NULL COMMENT '약품명',
-                        item_name_normalized  VARCHAR(200) COMMENT '정규화된 약품명',
+                        item_name             VARCHAR(500) NOT NULL COMMENT '약품명',
+                        item_name_normalized  VARCHAR(500) COMMENT '정규화된 약품명',
+                        item_eng_name         VARCHAR(500) COMMENT '영문 약품명',
                         entp_name             VARCHAR(200) COMMENT '업체명',
+                        entp_eng_name         VARCHAR(200) COMMENT '영문 업체명',
+                        item_ingr_name        TEXT COMMENT '주성분명',
+                        item_ingr_cnt         INT COMMENT '성분 수',
+                        spclty_pblc           VARCHAR(50) COMMENT '전문/일반 구분',
+                        prduct_type           VARCHAR(100) COMMENT '제품 유형',
+                        item_permit_date      VARCHAR(20) COMMENT '허가일자',
+                        cancel_date           VARCHAR(20) COMMENT '취소일자',
+                        cancel_name           VARCHAR(50) COMMENT '취소 상태',
+                        edi_code              VARCHAR(500) COMMENT 'EDI 코드',
+                        permit_kind_code      VARCHAR(50) COMMENT '허가 종류',
                         efcy_qesitm           TEXT COMMENT '효능효과',
                         use_method_qesitm     TEXT COMMENT '사용법',
                         atpn_qesitm           TEXT COMMENT '주의사항',
@@ -430,12 +502,14 @@ class DrugRepository:
                         se_qesitm             TEXT COMMENT '부작용',
                         deposit_method_qesitm TEXT COMMENT '보관법',
                         item_image            VARCHAR(500) COMMENT '이미지URL',
+                        is_active             TINYINT(1) NOT NULL DEFAULT 1 COMMENT '활성 여부',
                         created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        INDEX idx_item_name (item_name),
-                        INDEX idx_item_name_normalized (item_name_normalized),
+                        INDEX idx_item_name (item_name(200)),
+                        INDEX idx_item_name_normalized (item_name_normalized(200)),
+                        INDEX idx_is_active (is_active),
                         FULLTEXT INDEX ft_item_name (item_name) WITH PARSER ngram
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """
                 cursor.execute(sql)
 
@@ -456,7 +530,7 @@ class DrugRepository:
                         CONSTRAINT fk_medication_alias_item_seq
                             FOREIGN KEY (item_seq) REFERENCES medications_master(item_seq)
                             ON DELETE CASCADE
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """)
 
                 cursor.execute("""
@@ -478,7 +552,7 @@ class DrugRepository:
                         CONSTRAINT fk_medication_error_alias_item_seq
                             FOREIGN KEY (item_seq) REFERENCES medications_master(item_seq)
                             ON DELETE CASCADE
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """)
 
                 connection.commit()

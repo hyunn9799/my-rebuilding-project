@@ -20,6 +20,9 @@ export interface MedicationCandidate {
     category?: string;
     item_seq?: string;
     entp_name?: string;
+    item_ingr_name?: string;
+    spclty_pblc?: string;
+    prduct_type?: string;
     match_score?: number;
     match_method?: string;
     purpose?: string;
