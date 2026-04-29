@@ -7,6 +7,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+**/chroma_db/
+*.bin
+
+# Vector DB (Do not commit)
+chroma_db/
+
 # C extensions
 *.so
 

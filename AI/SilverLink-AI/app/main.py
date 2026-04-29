@@ -95,49 +95,49 @@ class AppCreator:
     @asynccontextmanager
     async def lifespan(self, app: FastAPI):
         # --- [Startup] 서버 시작 시 실행될 코드 ---
-        print("⏳ Warming up Models...")
+        print("[startup] Warming up models...")
         try:
             # 1. Orchestrator (Qwen) Warm-up
             if hasattr(orchestrator_engine, "local_llm") and orchestrator_engine.local_llm:
-                print("✅ Orchestrator (Qwen) Ready.")
+                print("[startup] Orchestrator (Qwen) ready.")
             else:
-                print("⚠️ Orchestrator (Qwen) not loaded (skipped).")
+                print("[startup] Orchestrator (Qwen) not loaded; skipped.")
 
             # 2. OpenAI Warm-up (Real Request)
             try:
                 llm_service = self.container.llm()
                 if hasattr(llm_service, "client"):
-                    print("🚀 Sending dummy request to OpenAI...")
+                    print("[startup] Sending dummy request to OpenAI...")
                     await llm_service.aclient.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[{"role": "user", "content": "hi"}],
                         max_tokens=1
                     )
-                    print("✅ OpenAI Connection Established.")
+                    print("[startup] OpenAI connection established.")
             except Exception as e:
-                print(f"⚠️ OpenAI Warm-up Failed (non-fatal): {e}")
+                print(f"[startup] OpenAI warm-up failed (non-fatal): {e}")
 
             # 3. TTS Prefetch (optional)
             try:
                 tts_service = self.container.tts()
                 greeting = "안녕하세요! 실버링크에서 연락드렸습니다."
                 await tts_service.asultlux(greeting)
-                print("✅ TTS Prefetched!")
+                print("[startup] TTS prefetched.")
             except Exception as e:
-                print(f"⚠️ TTS Prefetch Failed (non-fatal): {e}")
+                print(f"[startup] TTS prefetch failed (non-fatal): {e}")
 
             # 4. Backend Login (optional)
             try:
                 callbot_service = self.container.callbot_service()
                 await callbot_service._login_backend()
-                print("✅ Backend Login successful on startup.")
+                print("[startup] Backend login successful.")
             except Exception as e:
-                print(f"⚠️ Backend Login Failed (non-fatal): {e}")
+                print(f"[startup] Backend login failed (non-fatal): {e}")
 
         except Exception as e:
-            print(f"⚠️ Startup pre-processing failed (non-fatal): {e}")
+            print(f"[startup] Pre-processing failed (non-fatal): {e}")
 
-        print("🚀 Server is ready!")
+        print("[startup] Server is ready.")
         yield  # 서버가 실행되는 동안 여기서 대기합니다.
         
         # --- [Shutdown] 서버 종료 시 실행될 코드 ---

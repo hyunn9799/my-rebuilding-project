@@ -1,28 +1,37 @@
-import { useState, useEffect, useCallback } from "react";
-import DashboardLayout from "@/components/layout/DashboardLayout";
-import { adminNavItems } from "@/config/adminNavItems";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCallback, useEffect, useState } from "react";
 import {
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  RefreshCw,
-  Pill,
   AlertTriangle,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Hash,
   Clock,
+  Hash,
+  Loader2,
+  Pill,
+  RefreshCw,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "@/contexts/AuthContext";
+
 import aliasAdminApi, {
   type AliasSuggestionItem,
   type AliasSuggestionPageResponse,
 } from "@/api/aliasAdmin";
+import DashboardLayout from "@/components/layout/DashboardLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { adminNavItems } from "@/config/adminNavItems";
+import { useAuth } from "@/contexts/AuthContext";
+
+const PAGE_SIZE = 20;
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   PENDING: { label: "대기", color: "bg-amber-100 text-amber-700 border-amber-200" },
@@ -32,64 +41,68 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 
 const typeConfig: Record<string, { label: string; color: string }> = {
   alias: { label: "별칭", color: "bg-blue-100 text-blue-700 border-blue-200" },
-  error_alias: { label: "오류 변형", color: "bg-orange-100 text-orange-700 border-orange-200" },
+  error_alias: { label: "OCR 오류 별칭", color: "bg-orange-100 text-orange-700 border-orange-200" },
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const response = (error as { response?: { data?: { message?: string; detail?: string } } }).response;
+    return response?.data?.message || response?.data?.detail || fallback;
+  }
+  if (error instanceof Error) return error.message;
+  return fallback;
 };
 
 const AliasManagement = () => {
   const { user } = useAuth();
-
   const [data, setData] = useState<AliasSuggestionPageResponse>({
     items: [],
     total: 0,
     page: 1,
-    size: 20,
+    size: PAGE_SIZE,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState("PENDING");
   const [isReloading, setIsReloading] = useState(false);
 
-  const fetchData = useCallback(async (page: number = 1) => {
-    setIsLoading(true);
-    try {
-      const result = await aliasAdminApi.getAliasSuggestions(
-        page,
-        20,
-        filterStatus,
-      );
-      setData(result);
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || "데이터 조회 실패";
-      toast.error(msg);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [filterStatus]);
+  const fetchData = useCallback(
+    async (page = 1) => {
+      setIsLoading(true);
+      try {
+        const result = await aliasAdminApi.getAliasSuggestions(page, PAGE_SIZE, filterStatus);
+        setData(result);
+      } catch (error) {
+        toast.error(getErrorMessage(error, "Alias 제안 목록을 불러오지 못했습니다."));
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [filterStatus],
+  );
 
   useEffect(() => {
     fetchData(1);
   }, [fetchData]);
 
+  const reviewerName = user?.name || "admin";
+
   const handleApprove = async (item: AliasSuggestionItem) => {
     setActionLoadingId(item.id);
     try {
-      const result = await aliasAdminApi.approveSuggestion(
-        item.id,
-        user?.name || "admin",
-      );
+      const result = await aliasAdminApi.approveSuggestion(item.id, reviewerName);
       if (result.success) {
         if (result.reload_success === false) {
-            toast.warning(result.reload_warning || "사전 리로드 실패. 서버에서 확인해주세요.");
+          toast.warning(result.reload_warning || "승인은 완료됐지만 사전 리로드에 실패했습니다.");
         } else {
-            toast.success(result.message);
+          toast.success(result.message || "Alias 제안을 승인했습니다.");
         }
         fetchData(data.page);
       } else {
-        toast.error(result.message);
+        toast.error(result.message || "Alias 제안 승인에 실패했습니다.");
       }
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || "승인 실패";
-      toast.error(msg);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Alias 제안 승인에 실패했습니다."));
     } finally {
       setActionLoadingId(null);
     }
@@ -98,19 +111,15 @@ const AliasManagement = () => {
   const handleReject = async (item: AliasSuggestionItem) => {
     setActionLoadingId(item.id);
     try {
-      const result = await aliasAdminApi.rejectSuggestion(
-        item.id,
-        user?.name || "admin",
-      );
+      const result = await aliasAdminApi.rejectSuggestion(item.id, reviewerName);
       if (result.success) {
-        toast.success(result.message);
+        toast.success(result.message || "Alias 제안을 거부했습니다.");
         fetchData(data.page);
       } else {
-        toast.error(result.message);
+        toast.error(result.message || "Alias 제안 거부에 실패했습니다.");
       }
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || "거부 실패";
-      toast.error(msg);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Alias 제안 거부에 실패했습니다."));
     } finally {
       setActionLoadingId(null);
     }
@@ -121,13 +130,12 @@ const AliasManagement = () => {
     try {
       const result = await aliasAdminApi.reloadDictionary();
       if (result.success) {
-        toast.success(result.message);
+        toast.success(result.message || "의약품 사전을 다시 불러왔습니다.");
       } else {
-        toast.error(result.message);
+        toast.error(result.message || "의약품 사전 리로드에 실패했습니다.");
       }
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || "리로드 실패";
-      toast.error(msg);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "의약품 사전 리로드에 실패했습니다."));
     } finally {
       setIsReloading(false);
     }
@@ -151,18 +159,13 @@ const AliasManagement = () => {
   };
 
   return (
-    <DashboardLayout
-      role="admin"
-      userName={user?.name || "관리자"}
-      navItems={adminNavItems}
-    >
+    <DashboardLayout role="admin" userName={user?.name || "관리자"} navItems={adminNavItems}>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Alias 제안 관리</h1>
-            <p className="text-muted-foreground mt-1">
-              OCR 사용자 피드백 기반 약품 별칭 제안을 검토합니다
+            <p className="mt-1 text-muted-foreground">
+              OCR 사용자 피드백으로 생성된 의약품 별칭 제안을 검토합니다.
             </p>
           </div>
           <div className="flex gap-2">
@@ -172,7 +175,7 @@ const AliasManagement = () => {
               disabled={isLoading}
               className="gap-2"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
               새로고침
             </Button>
             <Button
@@ -182,29 +185,28 @@ const AliasManagement = () => {
               variant="secondary"
             >
               {isReloading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="h-4 w-4" />
               )}
               사전 리로드
             </Button>
           </div>
         </div>
 
-        {/* Filter */}
         <Card className="shadow-card border-0">
           <CardContent className="p-4">
-            <div className="flex flex-col sm:flex-row gap-4 items-center">
-              <div className="flex items-center gap-2 flex-1">
-                <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                  상태 필터:
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="flex flex-1 items-center gap-2">
+                <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">
+                  상태 필터
                 </span>
                 <Select value={filterStatus} onValueChange={setFilterStatus}>
                   <SelectTrigger className="w-40">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PENDING">대기 (PENDING)</SelectItem>
+                    <SelectItem value="PENDING">대기</SelectItem>
                     <SelectItem value="APPROVED">승인됨</SelectItem>
                     <SelectItem value="REJECTED">거부됨</SelectItem>
                     <SelectItem value="ALL">전체</SelectItem>
@@ -218,22 +220,21 @@ const AliasManagement = () => {
           </CardContent>
         </Card>
 
-        {/* List */}
         {isLoading ? (
           <Card className="shadow-card border-0">
             <CardContent className="p-12 text-center">
-              <Loader2 className="w-8 h-8 mx-auto text-muted-foreground animate-spin" />
-              <p className="text-muted-foreground mt-3">로딩 중...</p>
+              <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
+              <p className="mt-3 text-muted-foreground">불러오는 중입니다.</p>
             </CardContent>
           </Card>
         ) : data.items.length === 0 ? (
           <Card className="shadow-card border-0">
             <CardContent className="p-12 text-center">
-              <Pill className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <Pill className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
               <p className="text-muted-foreground">
                 {filterStatus === "PENDING"
-                  ? "대기 중인 제안이 없습니다"
-                  : "표시할 제안이 없습니다"}
+                  ? "대기 중인 Alias 제안이 없습니다."
+                  : "표시할 Alias 제안이 없습니다."}
               </p>
             </CardContent>
           </Card>
@@ -247,14 +248,13 @@ const AliasManagement = () => {
               return (
                 <Card
                   key={item.id}
-                  className="shadow-card border-0 hover:shadow-elevated transition-shadow"
+                  className="shadow-card border-0 transition-shadow hover:shadow-elevated"
                 >
                   <CardContent className="p-4 sm:p-5">
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                      {/* Left: Info */}
+                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                       <div className="flex-1 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-base text-foreground">
+                          <span className="text-base font-bold text-foreground">
                             "{item.alias_name}"
                           </span>
                           <span className="text-muted-foreground">→</span>
@@ -271,7 +271,7 @@ const AliasManagement = () => {
                             {type.label}
                           </Badge>
                           <Badge variant="outline" className="gap-1">
-                            <Hash className="w-3 h-3" />
+                            <Hash className="h-3 w-3" />
                             {item.frequency}회
                           </Badge>
                           {item.source && (
@@ -283,19 +283,20 @@ const AliasManagement = () => {
 
                         <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
+                            <Clock className="h-3 w-3" />
                             {formatDate(item.created_at)}
                           </span>
                           {item.reviewed_by && (
-                            <span>검토: {item.reviewed_by} ({formatDate(item.reviewed_at)})</span>
+                            <span>
+                              검토자 {item.reviewed_by} ({formatDate(item.reviewed_at)})
+                            </span>
                           )}
                           {item.alias_normalized && item.alias_normalized !== item.alias_name && (
-                            <span>정규화: "{item.alias_normalized}"</span>
+                            <span>정규화 "{item.alias_normalized}"</span>
                           )}
                         </div>
                       </div>
 
-                      {/* Right: Actions */}
                       {item.review_status === "PENDING" && (
                         <div className="flex gap-2 self-end sm:self-start">
                           <Button
@@ -305,9 +306,9 @@ const AliasManagement = () => {
                             className="gap-1 bg-green-600 hover:bg-green-700"
                           >
                             {isActionLoading ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
-                              <CheckCircle2 className="w-4 h-4" />
+                              <CheckCircle2 className="h-4 w-4" />
                             )}
                             승인
                           </Button>
@@ -316,12 +317,12 @@ const AliasManagement = () => {
                             variant="outline"
                             onClick={() => handleReject(item)}
                             disabled={isActionLoading}
-                            className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                            className="gap-1 border-red-200 text-red-600 hover:bg-red-50"
                           >
                             {isActionLoading ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
-                              <XCircle className="w-4 h-4" />
+                              <XCircle className="h-4 w-4" />
                             )}
                             거부
                           </Button>
@@ -335,16 +336,15 @@ const AliasManagement = () => {
           </div>
         )}
 
-        {/* Pagination */}
         {data.total > data.size && (
-          <div className="flex justify-center items-center gap-4">
+          <div className="flex items-center justify-center gap-4">
             <Button
               variant="outline"
               size="sm"
               disabled={data.page <= 1 || isLoading}
               onClick={() => fetchData(data.page - 1)}
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="text-sm text-muted-foreground">
               {data.page} / {totalPages}
@@ -355,24 +355,27 @@ const AliasManagement = () => {
               disabled={data.page >= totalPages || isLoading}
               onClick={() => fetchData(data.page + 1)}
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         )}
 
-        {/* Info Card */}
-        <Card className="shadow-card border-0 bg-amber-50/50 border-amber-200">
+        <Card className="shadow-card border-amber-200 bg-amber-50/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
               운영 안내
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground space-y-1">
-            <p>• <strong>별칭(alias)</strong>: 정식 약품명의 다른 표현 (예: "타이레놀" → 타이레놀정500밀리그램)</p>
-            <p>• <strong>오류 변형(error_alias)</strong>: OCR 오인식 패턴 (예: "타이레놜" → 타이레놀정)</p>
-            <p>• 승인하면 해당 별칭이 실제 매칭 사전에 추가되어 다음 OCR부터 적용됩니다.</p>
-            <p>• 승인 후 <strong>사전 리로드</strong>를 누르면 AI 서버의 인메모리 인덱스가 즉시 갱신됩니다.</p>
+          <CardContent className="space-y-1 text-sm text-muted-foreground">
+            <p>
+              <strong>별칭(alias)</strong>은 정식 의약품명의 다른 표현입니다.
+            </p>
+            <p>
+              <strong>OCR 오류 별칭(error_alias)</strong>은 OCR이 반복적으로 잘못 읽는 표현입니다.
+            </p>
+            <p>승인하면 실제 매칭 사전에 추가되어 다음 OCR부터 적용됩니다.</p>
+            <p>승인 후 사전 리로드가 성공하면 AI 서버의 인메모리 인덱스가 즉시 갱신됩니다.</p>
           </CardContent>
         </Card>
       </div>

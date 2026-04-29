@@ -127,3 +127,12 @@ class DrugVectorRepository:
     def get_count(self) -> int:
         """컬렉션 내 문서 수"""
         return self._collection.count()
+
+    def reset_collection(self) -> None:
+        """Drop and recreate the drug embedding collection."""
+        self._client.delete_collection(self.collection_name)
+        self._collection = self._client.get_or_create_collection(
+            name=self.collection_name,
+            metadata={"hnsw:space": "cosine"},
+        )
+        logger.info(f"ChromaDB collection reset: '{self.collection_name}'")

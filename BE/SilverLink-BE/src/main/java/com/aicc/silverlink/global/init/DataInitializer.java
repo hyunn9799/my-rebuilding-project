@@ -45,6 +45,21 @@ public class DataInitializer implements CommandLineRunner {
         }
 
         // 2. 행정구역 (서울시 중구)
+        if (userRepository.findByLoginId("admin_test").isEmpty()) {
+            User adminTestUser = User.builder()
+                    .loginId("admin_test")
+                    .passwordHash(passwordEncoder.encode("1234"))
+                    .name("Test Admin")
+                    .phone("010-0000-0001")
+                    .role(Role.ADMIN)
+                    .status(UserStatus.ACTIVE)
+                    .phoneVerified(true)
+                    .build();
+
+            userRepository.save(adminTestUser);
+            System.out.println("Test admin user created: ID=admin_test / PW=1234");
+        }
+
         Long admCode = 1114000000L;
         AdministrativeDivision seoulJungGu = admRepo.findById(admCode).orElseGet(() -> {
             AdministrativeDivision adm = AdministrativeDivision.builder()

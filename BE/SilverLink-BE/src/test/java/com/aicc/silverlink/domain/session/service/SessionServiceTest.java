@@ -15,10 +15,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -145,8 +148,8 @@ class SessionServiceTest {
         sessionService.forceKickExistingSession(userId);
 
         // then
-        verify(redis).delete(sessKey);
-        verify(redis).delete(userKey);
+        verify(redis).executePipelined(any(RedisCallback.class));
+        verify(sessionKickPubSub).publishSessionKicked(userId, existingSid);
     }
 
     @Test
@@ -259,7 +262,10 @@ class SessionServiceTest {
         String userKey = "user:1:sid";
 
         given(valueOps.get(userKey)).willReturn(null); // 기존 세션 없음
-        given(redis.execute(any(RedisScript.class), anyList(), any())).willReturn("");
+        given(redis.execute(
+                any(RedisScript.class), anyList(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .willReturn("");
 
         // when
         SessionService.SessionIssue result = sessionService.issueSession(userId, role);
@@ -268,7 +274,9 @@ class SessionServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.sid()).isNotNull();
         assertThat(result.refreshToken()).isNotNull();
-        verify(redis).execute(any(RedisScript.class), anyList(), any());
+        verify(redis).execute(
+                any(RedisScript.class), anyList(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(eventPublisher).publishSessionCreated(eq(userId), anyString(), isNull());
     }
 
@@ -307,7 +315,10 @@ class SessionServiceTest {
         given(valueOps.get(userKey)).willReturn(existingSid);
         given(redis.hasKey(sessKey)).willReturn(true);
         // Lua Script가 기존 SID 반환
-        given(redis.execute(any(RedisScript.class), anyList(), any())).willReturn(existingSid);
+        given(redis.execute(
+                any(RedisScript.class), anyList(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .willReturn(existingSid);
 
         // when
         SessionService.SessionIssue result = sessionService.issueSession(userId, role);
@@ -407,9 +418,8 @@ class SessionServiceTest {
         String sessKey = "sess:existing-sid-123";
 
         given(redis.hasKey(sessKey)).willReturn(true);
-        given(hashOps.get(sessKey, "ip")).willReturn("192.168.1.100");
-        given(hashOps.get(sessKey, "ua")).willReturn("Chrome/120.0 Windows");
-        given(hashOps.get(sessKey, "deviceId")).willReturn("device-hash-abc");
+        given(hashOps.multiGet(sessKey, List.of("ip", "ua", "deviceId")))
+                .willReturn(List.of("192.168.1.100", "Chrome/120.0 Windows", "device-hash-abc"));
 
         // when
         DeviceInfo result = sessionService.getConflictingDeviceInfo(existingSid);
@@ -429,8 +439,8 @@ class SessionServiceTest {
         String sessKey = "sess:existing-sid-456";
 
         given(redis.hasKey(sessKey)).willReturn(true);
-        given(hashOps.get(sessKey, "ip")).willReturn(null);
-        given(hashOps.get(sessKey, "ua")).willReturn(null);
+        given(hashOps.multiGet(sessKey, List.of("ip", "ua", "deviceId")))
+                .willReturn(Arrays.asList(null, null, null));
 
         // when
         DeviceInfo result = sessionService.getConflictingDeviceInfo(existingSid);
