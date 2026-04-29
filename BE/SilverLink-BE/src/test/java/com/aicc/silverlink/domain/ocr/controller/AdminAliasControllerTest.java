@@ -74,8 +74,8 @@ class AdminAliasControllerTest {
     }
 
     @Test
-    @DisplayName("approve request is proxied to Python approve endpoint")
-    void approveSuggestionProxiesToPythonEndpoint() {
+    @DisplayName("approve request is proxied to Python approve endpoint with encoded reviewer")
+    void approveSuggestionProxiesToPythonEndpointWithEncodedReviewer() {
         AliasSuggestionActionResponse body = AliasSuggestionActionResponse.builder()
                 .success(true)
                 .message("approved")
@@ -84,13 +84,13 @@ class AdminAliasControllerTest {
 
         ArgumentCaptor<HttpEntity<Void>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
         when(restTemplate.exchange(
-                eq(PYTHON_URL + "/api/ocr/admin/alias-suggestions/10/approve?reviewed_by=admin-user"),
+                eq(PYTHON_URL + "/api/ocr/admin/alias-suggestions/10/approve?reviewed_by=Test%20Admin"),
                 eq(HttpMethod.PUT),
                 entityCaptor.capture(),
                 eq(AliasSuggestionActionResponse.class)))
                 .thenReturn(ResponseEntity.ok(body));
 
-        ResponseEntity<AliasSuggestionActionResponse> response = controller.approveSuggestion(10L, "admin-user");
+        ResponseEntity<AliasSuggestionActionResponse> response = controller.approveSuggestion(10L, "Test Admin");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isSameAs(body);
@@ -98,21 +98,21 @@ class AdminAliasControllerTest {
     }
 
     @Test
-    @DisplayName("reject request is proxied to Python reject endpoint")
-    void rejectSuggestionProxiesToPythonEndpoint() {
+    @DisplayName("reject request is proxied to Python reject endpoint with encoded reviewer")
+    void rejectSuggestionProxiesToPythonEndpointWithEncodedReviewer() {
         AliasSuggestionActionResponse body = AliasSuggestionActionResponse.builder()
                 .success(true)
                 .message("rejected")
                 .build();
 
         when(restTemplate.exchange(
-                eq(PYTHON_URL + "/api/ocr/admin/alias-suggestions/11/reject?reviewed_by=admin-user"),
+                eq(PYTHON_URL + "/api/ocr/admin/alias-suggestions/11/reject?reviewed_by=Test%20Admin"),
                 eq(HttpMethod.PUT),
                 org.mockito.ArgumentMatchers.<HttpEntity<Void>>any(),
                 eq(AliasSuggestionActionResponse.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.ACCEPTED).body(body));
 
-        ResponseEntity<AliasSuggestionActionResponse> response = controller.rejectSuggestion(11L, "admin-user");
+        ResponseEntity<AliasSuggestionActionResponse> response = controller.rejectSuggestion(11L, "Test Admin");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         assertThat(response.getBody()).isSameAs(body);

@@ -398,6 +398,12 @@ class MedicationPipeline:
         # 자동 확정하면 안 됨
         top_source = top.evidence.get("source", "")
         if top_source in ("vector_db", "vector_fallback"):
+            if top.score < self.threshold:
+                reasons.append(
+                    f"VectorDB 후보 점수가 threshold({self.threshold:.2f})보다 낮습니다 (source={top_source})."
+                )
+                return "LOW_CONFIDENCE", top.score, True, reasons
+
             reasons.append(
                 f"VectorDB 후보만으로는 자동 확정하지 않습니다 (source={top_source})"
             )

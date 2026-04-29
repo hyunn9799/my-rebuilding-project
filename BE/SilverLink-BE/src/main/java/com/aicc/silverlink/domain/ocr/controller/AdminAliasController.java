@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -53,8 +54,14 @@ public class AdminAliasController {
         log.info("Admin alias suggestions request: page={}, size={}, status={}", page, size, reviewStatus);
 
         try {
-            String pythonUrl = pythonAiUrl + "/api/ocr/admin/alias-suggestions"
-                    + "?page=" + page + "&size=" + size + "&review_status=" + reviewStatus;
+            String pythonUrl = UriComponentsBuilder
+                    .fromUriString(pythonAiUrl + "/api/ocr/admin/alias-suggestions")
+                    .queryParam("page", page)
+                    .queryParam("size", size)
+                    .queryParam("review_status", reviewStatus)
+                    .build()
+                    .encode()
+                    .toUriString();
             HttpEntity<Void> entity = new HttpEntity<>(createJsonHeaders());
 
             ResponseEntity<AliasSuggestionPageResponse> response = restTemplate.exchange(
@@ -84,8 +91,12 @@ public class AdminAliasController {
         log.info("Admin approve alias suggestion: id={}, by={}", suggestionId, reviewedBy);
 
         try {
-            String pythonUrl = pythonAiUrl + "/api/ocr/admin/alias-suggestions/"
-                    + suggestionId + "/approve?reviewed_by=" + reviewedBy;
+            String pythonUrl = UriComponentsBuilder
+                    .fromUriString(pythonAiUrl + "/api/ocr/admin/alias-suggestions/" + suggestionId + "/approve")
+                    .queryParam("reviewed_by", reviewedBy)
+                    .build()
+                    .encode()
+                    .toUriString();
             HttpEntity<Void> entity = new HttpEntity<>(createJsonHeaders());
 
             ResponseEntity<AliasSuggestionActionResponse> response = restTemplate.exchange(
@@ -117,8 +128,12 @@ public class AdminAliasController {
         log.info("Admin reject alias suggestion: id={}, by={}", suggestionId, reviewedBy);
 
         try {
-            String pythonUrl = pythonAiUrl + "/api/ocr/admin/alias-suggestions/"
-                    + suggestionId + "/reject?reviewed_by=" + reviewedBy;
+            String pythonUrl = UriComponentsBuilder
+                    .fromUriString(pythonAiUrl + "/api/ocr/admin/alias-suggestions/" + suggestionId + "/reject")
+                    .queryParam("reviewed_by", reviewedBy)
+                    .build()
+                    .encode()
+                    .toUriString();
             HttpEntity<Void> entity = new HttpEntity<>(createJsonHeaders());
 
             ResponseEntity<AliasSuggestionActionResponse> response = restTemplate.exchange(

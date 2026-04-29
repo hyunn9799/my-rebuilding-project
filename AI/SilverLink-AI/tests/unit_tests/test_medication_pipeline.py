@@ -1,6 +1,6 @@
 import pytest
 
-from app.ocr.model.drug_model import DrugInfo, MatchCandidate, MatchResult, OCRToken
+from app.ocr.model.drug_model import DrugInfo, MatchCandidate, MatchResult, NormalizedDrug, OCRToken
 from app.ocr.services.llm_descriptor import LLMDescriptor
 from app.ocr.services.medication_pipeline import MedicationPipeline
 from app.ocr.services.rule_validator import RuleValidator
@@ -28,6 +28,29 @@ class FakeVectorMatcher:
         return MatchResult()
 
 
+class StaticNormalizer:
+    def __init__(self, normalized_drugs):
+        self.normalized_drugs = normalized_drugs
+
+    def normalize(self, ocr_text: str, ocr_tokens=None):
+        return self.normalized_drugs
+
+
+class RecordingVectorMatcher:
+    def __init__(self, candidates_by_name):
+        self.candidates_by_name = candidates_by_name
+        self.calls = []
+
+    def match(self, normalized_name: str, top_k: int = 5) -> MatchResult:
+        self.calls.append(normalized_name)
+        candidates = self.candidates_by_name.get(normalized_name, [])
+        return MatchResult(
+            candidates=candidates,
+            best_score=candidates[0].score if candidates else 0.0,
+            method=candidates[0].method if candidates else "none",
+        )
+
+
 class FakeLLMDescriptor:
     async def generate_description(self, candidates, ocr_text, decision_status="MATCHED"):
         return {
@@ -37,20 +60,38 @@ class FakeLLMDescriptor:
         }
 
 
-def _candidate(name: str, score: float, method: str = "exact") -> MatchCandidate:
+def _candidate(
+    name: str,
+    score: float,
+    method: str = "exact",
+    source: str | None = None,
+    item_seq: str | None = None,
+    entp_name: str = "테스트제약",
+    ingredient: str | None = None,
+) -> MatchCandidate:
     return MatchCandidate(
         drug_info=DrugInfo(
-            item_seq=f"SEQ-{name}",
+            item_seq=item_seq or f"SEQ-{name}",
             item_name=name,
             item_name_normalized=name,
-            entp_name="테스트제약",
+            entp_name=entp_name,
+            item_ingr_name=ingredient,
             efcy_qesitm="해열 및 진통",
             use_method_qesitm="정해진 용법에 따라 복용",
             atpn_qesitm="이상 증상이 있으면 전문가에게 상담",
         ),
         score=score,
         method=method,
-        evidence={"source": f"mysql_{method}", "name_match": score},
+        evidence={"source": source or f"mysql_{method}", "name_match": score},
+    )
+
+
+def _normalized(name: str, dosage: str | None = None, form_type: str | None = None) -> NormalizedDrug:
+    return NormalizedDrug(
+        name=name,
+        dosage=dosage,
+        form_type=form_type,
+        original=name,
     )
 
 
@@ -205,6 +246,149 @@ async def test_pipeline_vectordb_only_candidate_not_auto_matched():
     result = await pipeline.process("타이레놀정 500mg")
 
     # VectorDB 후보만으로는 자동 확정되지 않아야 함
+    assert result.requires_user_confirmation is True
+
+
+@pytest.mark.asyncio
+async def test_pipeline_vector_fallback_runs_for_partial_product_name():
+    vector_matcher = RecordingVectorMatcher({
+        "타이레": [
+            _candidate(
+                "타이레놀정500mg",
+                0.93,
+                method="vector",
+                source="vector_db",
+                entp_name="한국존슨앤드존슨",
+            )
+        ]
+    })
+    pipeline = MedicationPipeline(
+        text_normalizer=StaticNormalizer([_normalized("타이레", dosage="500mg", form_type="정")]),
+        mysql_matcher=FakeMySQLMatcher([]),
+        vector_matcher=vector_matcher,
+        rule_validator=RuleValidator(),
+        llm_descriptor=FakeLLMDescriptor(),
+        match_threshold=0.7,
+    )
+
+    result = await pipeline.process("타이레 500mg 정")
+
+    assert vector_matcher.calls == ["타이레"]
+    assert result.decision_status == "NEED_USER_CONFIRMATION"
+    assert result.requires_user_confirmation is True
+    assert result.identified_drugs[0].method == "vector"
+    assert any(stage.stage == "vector_match" for stage in result.pipeline_stages)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_vector_fallback_runs_for_ingredient_only_ocr():
+    vector_matcher = RecordingVectorMatcher({
+        "아세트아미노펜": [
+            _candidate(
+                "타이레놀정500mg",
+                0.88,
+                method="vector",
+                source="vector_db",
+                ingredient="아세트아미노펜",
+            )
+        ]
+    })
+    pipeline = MedicationPipeline(
+        text_normalizer=StaticNormalizer([_normalized("아세트아미노펜", dosage="500mg")]),
+        mysql_matcher=FakeMySQLMatcher([]),
+        vector_matcher=vector_matcher,
+        rule_validator=RuleValidator(),
+        llm_descriptor=FakeLLMDescriptor(),
+        match_threshold=0.7,
+    )
+
+    result = await pipeline.process("아세트아미노펜 500mg")
+
+    assert vector_matcher.calls == ["아세트아미노펜"]
+    assert result.decision_status == "NEED_USER_CONFIRMATION"
+    assert result.requires_user_confirmation is True
+    assert result.identified_drugs[0].drug_info.item_ingr_name == "아세트아미노펜"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_vector_candidate_records_manufacturer_evidence():
+    vector_matcher = RecordingVectorMatcher({
+        "타이레": [
+            _candidate(
+                "타이레놀정500mg",
+                0.91,
+                method="vector",
+                source="vector_db",
+                entp_name="한국존슨앤드존슨",
+            )
+        ]
+    })
+    pipeline = MedicationPipeline(
+        text_normalizer=StaticNormalizer([_normalized("타이레", dosage="500mg")]),
+        mysql_matcher=FakeMySQLMatcher([]),
+        vector_matcher=vector_matcher,
+        rule_validator=RuleValidator(),
+        llm_descriptor=FakeLLMDescriptor(),
+        match_threshold=0.7,
+    )
+
+    result = await pipeline.process("한국존슨앤드존슨 타이레 500mg")
+
+    assert result.decision_status == "NEED_USER_CONFIRMATION"
+    assert result.identified_drugs[0].evidence["manufacturer_match"] is True
+
+
+@pytest.mark.asyncio
+async def test_pipeline_uses_vector_when_alias_has_no_candidate():
+    vector_candidate = _candidate(
+        "게보린정",
+        0.99,
+        method="vector",
+        source="vector_db",
+    )
+    vector_matcher = RecordingVectorMatcher({"게보링": [vector_candidate]})
+    pipeline = MedicationPipeline(
+        text_normalizer=StaticNormalizer([_normalized("게보링", form_type="정")]),
+        mysql_matcher=FakeMySQLMatcher([]),
+        vector_matcher=vector_matcher,
+        rule_validator=RuleValidator(),
+        llm_descriptor=FakeLLMDescriptor(),
+        match_threshold=0.7,
+    )
+
+    result = await pipeline.process("게보링정")
+
+    assert vector_matcher.calls == ["게보링"]
+    assert result.identified_drugs[0].drug_info.item_name == "게보린정"
+    assert result.decision_status == "NEED_USER_CONFIRMATION"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_keeps_low_confidence_for_irrelevant_vector_result():
+    vector_matcher = RecordingVectorMatcher({
+        "건강기능식품": [
+            _candidate(
+                "타이레놀정500mg",
+                0.2,
+                method="vector",
+                source="vector_db",
+            )
+        ]
+    })
+    pipeline = MedicationPipeline(
+        text_normalizer=StaticNormalizer([_normalized("건강기능식품")]),
+        mysql_matcher=FakeMySQLMatcher([]),
+        vector_matcher=vector_matcher,
+        rule_validator=RuleValidator(),
+        llm_descriptor=FakeLLMDescriptor(),
+        match_threshold=0.7,
+    )
+
+    result = await pipeline.process("건강기능식품 안내문")
+
+    assert vector_matcher.calls == ["건강기능식품"]
+    assert result.decision_status == "LOW_CONFIDENCE"
+    assert result.match_confidence < 0.7
     assert result.requires_user_confirmation is True
 
 
