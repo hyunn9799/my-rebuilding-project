@@ -8,14 +8,26 @@ from loguru import logger
 
 from app.core.config import configs
 
+def get_field(item: dict, *keys, default=None):
+    for key in keys:
+        value = item.get(key)
+        if value not in (None, ""):
+            return value
+    return default
+
 
 class DrugApiClient:
     """식품의약품안전처 의약품 제품 허가 정보 API (DrugPrdtPrmsnInfoService07)"""
 
     def __init__(self, service_key: Optional[str] = None, endpoint: Optional[str] = None):
         self.service_key = service_key or configs.DRUG_API_SERVICE_KEY
-        self.endpoint = endpoint or configs.DRUG_API_ENDPOINT
-        self.BASE_URL = f"{self.endpoint}/getDrugPrdtPrmsnInq07"
+        # endpoint 끝에 / 가 없이 operation이 시작되도록 처리
+        base_ep = endpoint or configs.DRUG_API_ENDPOINT
+        self.endpoint = base_ep.rstrip('/')
+        operation = configs.DRUG_API_OPERATION
+        if not operation.startswith('/'):
+            operation = f"/{operation}"
+        self.BASE_URL = f"{self.endpoint}{operation}"
 
         if not self.service_key:
             raise ValueError("DRUG_API_SERVICE_KEY 환경변수가 설정되지 않았습니다.")
@@ -23,10 +35,9 @@ class DrugApiClient:
     async def search_by_name(self, item_name: str, page_no: int = 1, num_of_rows: int = 10) -> Dict[str, Any]:
         """약품명으로 조회"""
         params = {
-            "serviceKey": self.service_key,
             "pageNo": str(page_no),
             "numOfRows": str(num_of_rows),
-            "type": "json",
+            "type": configs.DRUG_API_RESPONSE_TYPE,
         }
         if item_name:
             params["item_name"] = item_name
@@ -35,20 +46,18 @@ class DrugApiClient:
     async def search_by_seq(self, item_seq: str) -> Dict[str, Any]:
         """품목기준코드로 조회"""
         params = {
-            "serviceKey": self.service_key,
             "item_seq": item_seq,
-            "type": "json",
+            "type": configs.DRUG_API_RESPONSE_TYPE,
         }
         return await self._request(params)
 
     async def search_by_entp(self, entp_name: str, page_no: int = 1, num_of_rows: int = 10) -> Dict[str, Any]:
         """업체명으로 조회"""
         params = {
-            "serviceKey": self.service_key,
             "entp_name": entp_name,
             "pageNo": str(page_no),
             "numOfRows": str(num_of_rows),
-            "type": "json",
+            "type": configs.DRUG_API_RESPONSE_TYPE,
         }
         return await self._request(params)
 
@@ -64,10 +73,9 @@ class DrugApiClient:
 
         while True:
             params = {
-                "serviceKey": self.service_key,
                 "pageNo": str(page_no),
                 "numOfRows": str(num_of_rows),
-                "type": "json",
+                "type": configs.DRUG_API_RESPONSE_TYPE,
             }
             if item_name:
                 params["item_name"] = item_name
@@ -97,9 +105,26 @@ class DrugApiClient:
 
     async def _request(self, params: Dict[str, str]) -> Dict[str, Any]:
         """HTTP 요청 수행"""
+        # serviceKey URL 인코딩 문제 방어: httpx가 이중 인코딩하지 않게 쿼리 문자열 직접 구성 시 유의하거나
+        # params dict 처리가 안전한지 확인. 기본적으로 params 전달은 안전함.
+        # 공공 API에서 이중 인코딩 막기 위한 편법: 문자열 쿼리로 직접 결합 (선택 사항)
+        # 하지만 최신 환경에서 service_key가 unquote 상태라면 param으로 맡기는게 안전함.
+        
+        # httpx Custom Query Params handling for serviceKey
+        # Some go.kr APIs get broken with double encoding, passing as str helps:
+        # However, to be clean, let's keep it in params dict, but pass serviceKey carefully.
+        query_params = params.copy()
+        
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(self.BASE_URL, params=params)
+                query_string = "&".join(f"{k}={v}" for k, v in query_params.items())
+                # serviceKey를 별도로 붙여 이중인코딩 회피 (공공데이터포털 종특)
+                if self.service_key:
+                    final_url = f"{self.BASE_URL}?serviceKey={self.service_key}&{query_string}"
+                else:
+                    final_url = f"{self.BASE_URL}?{query_string}"
+                    
+                response = await client.get(final_url)
                 response.raise_for_status()
 
                 # XML 에러 응답 체크 (API 키 오류 등)

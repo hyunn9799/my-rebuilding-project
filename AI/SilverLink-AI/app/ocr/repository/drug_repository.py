@@ -43,6 +43,15 @@ class DrugRepository:
             cancel_name=row.get("cancel_name"),
             edi_code=row.get("edi_code"),
             permit_kind_code=row.get("permit_kind_code"),
+            permit_date=row.get("permit_date"),
+            permit_no=row.get("permit_no"),
+            etc_otc_code=row.get("etc_otc_code"),
+            chart=row.get("chart"),
+            material_name=row.get("material_name"),
+            storage_method=row.get("storage_method"),
+            valid_term=row.get("valid_term"),
+            pack_unit=row.get("pack_unit"),
+            raw_json=row.get("raw_json"),
             efcy_qesitm=row.get("efcy_qesitm"),
             use_method_qesitm=row.get("use_method_qesitm"),
             atpn_qesitm=row.get("atpn_qesitm"),
@@ -294,6 +303,11 @@ class DrugRepository:
             if connection:
                 connection.close()
 
+    def fetch_active_medications_for_embedding(self) -> List[DrugInfo]:
+        """ChromaDB 임베딩 적재용 활성 약품 전체 조회 (is_active=1)"""
+        return self.fetch_all_medications_for_index()
+
+
     def fetch_all_aliases_for_index(self) -> List[Dict[str, Any]]:
         """Local memory index 초기화를 위한 alias 전체 조회."""
         connection = None
@@ -351,10 +365,12 @@ class DrugRepository:
                      item_ingr_name, item_ingr_cnt, spclty_pblc, prduct_type,
                      item_permit_date, cancel_date, cancel_name,
                      edi_code, permit_kind_code,
+                     permit_date, permit_no, etc_otc_code, chart, material_name,
+                     storage_method, valid_term, pack_unit, raw_json,
                      efcy_qesitm, use_method_qesitm, atpn_qesitm,
                      intrc_qesitm, se_qesitm, deposit_method_qesitm,
                      item_image, is_active)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON DUPLICATE KEY UPDATE
                         item_name = VALUES(item_name),
                         item_name_normalized = VALUES(item_name_normalized),
@@ -370,6 +386,15 @@ class DrugRepository:
                         cancel_name = VALUES(cancel_name),
                         edi_code = VALUES(edi_code),
                         permit_kind_code = VALUES(permit_kind_code),
+                        permit_date = VALUES(permit_date),
+                        permit_no = VALUES(permit_no),
+                        etc_otc_code = VALUES(etc_otc_code),
+                        chart = VALUES(chart),
+                        material_name = VALUES(material_name),
+                        storage_method = VALUES(storage_method),
+                        valid_term = VALUES(valid_term),
+                        pack_unit = VALUES(pack_unit),
+                        raw_json = VALUES(raw_json),
                         efcy_qesitm = VALUES(efcy_qesitm),
                         use_method_qesitm = VALUES(use_method_qesitm),
                         atpn_qesitm = VALUES(atpn_qesitm),
@@ -386,6 +411,9 @@ class DrugRepository:
                     drug.spclty_pblc, drug.prduct_type,
                     drug.item_permit_date, drug.cancel_date, drug.cancel_name,
                     drug.edi_code, drug.permit_kind_code,
+                    drug.permit_date, drug.permit_no, drug.etc_otc_code,
+                    drug.chart, drug.material_name, drug.storage_method,
+                    drug.valid_term, drug.pack_unit, drug.raw_json,
                     drug.efcy_qesitm, drug.use_method_qesitm,
                     drug.atpn_qesitm, drug.intrc_qesitm, drug.se_qesitm,
                     drug.deposit_method_qesitm, drug.item_image,
@@ -414,10 +442,12 @@ class DrugRepository:
                      item_ingr_name, item_ingr_cnt, spclty_pblc, prduct_type,
                      item_permit_date, cancel_date, cancel_name,
                      edi_code, permit_kind_code,
+                     permit_date, permit_no, etc_otc_code, chart, material_name,
+                     storage_method, valid_term, pack_unit, raw_json,
                      efcy_qesitm, use_method_qesitm, atpn_qesitm,
                      intrc_qesitm, se_qesitm, deposit_method_qesitm,
                      item_image, is_active)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON DUPLICATE KEY UPDATE
                         item_name = VALUES(item_name),
                         item_name_normalized = VALUES(item_name_normalized),
@@ -433,6 +463,15 @@ class DrugRepository:
                         cancel_name = VALUES(cancel_name),
                         edi_code = VALUES(edi_code),
                         permit_kind_code = VALUES(permit_kind_code),
+                        permit_date = VALUES(permit_date),
+                        permit_no = VALUES(permit_no),
+                        etc_otc_code = VALUES(etc_otc_code),
+                        chart = VALUES(chart),
+                        material_name = VALUES(material_name),
+                        storage_method = VALUES(storage_method),
+                        valid_term = VALUES(valid_term),
+                        pack_unit = VALUES(pack_unit),
+                        raw_json = VALUES(raw_json),
                         efcy_qesitm = VALUES(efcy_qesitm),
                         use_method_qesitm = VALUES(use_method_qesitm),
                         atpn_qesitm = VALUES(atpn_qesitm),
@@ -451,6 +490,9 @@ class DrugRepository:
                             drug.spclty_pblc, drug.prduct_type,
                             drug.item_permit_date, drug.cancel_date, drug.cancel_name,
                             drug.edi_code, drug.permit_kind_code,
+                            drug.permit_date, drug.permit_no, drug.etc_otc_code,
+                            drug.chart, drug.material_name, drug.storage_method,
+                            drug.valid_term, drug.pack_unit, drug.raw_json,
                             drug.efcy_qesitm, drug.use_method_qesitm,
                             drug.atpn_qesitm, drug.intrc_qesitm, drug.se_qesitm,
                             drug.deposit_method_qesitm, drug.item_image,
@@ -486,15 +528,24 @@ class DrugRepository:
                         item_eng_name         VARCHAR(500) COMMENT '영문 약품명',
                         entp_name             VARCHAR(200) COMMENT '업체명',
                         entp_eng_name         VARCHAR(200) COMMENT '영문 업체명',
-                        item_ingr_name        TEXT COMMENT '주성분명',
+                        item_ingr_name        TEXT COMMENT '주성분명 (ITEM_INGR_NAME 또는 MAIN_ITEM_INGR)',
                         item_ingr_cnt         INT COMMENT '성분 수',
                         spclty_pblc           VARCHAR(50) COMMENT '전문/일반 구분',
                         prduct_type           VARCHAR(100) COMMENT '제품 유형',
                         item_permit_date      VARCHAR(20) COMMENT '허가일자',
+                        permit_date           VARCHAR(20) COMMENT '허가일자(단축)',
+                        permit_no             VARCHAR(100) COMMENT '허가번호',
                         cancel_date           VARCHAR(20) COMMENT '취소일자',
                         cancel_name           VARCHAR(50) COMMENT '취소 상태',
                         edi_code              VARCHAR(500) COMMENT 'EDI 코드',
                         permit_kind_code      VARCHAR(50) COMMENT '허가 종류',
+                        etc_otc_code          VARCHAR(50) COMMENT '전문/일반 구분 코드',
+                        chart                 VARCHAR(500) COMMENT '성상',
+                        material_name         TEXT COMMENT '원료성분',
+                        storage_method        VARCHAR(500) COMMENT '저장방법',
+                        valid_term            VARCHAR(200) COMMENT '유효기간',
+                        pack_unit             VARCHAR(500) COMMENT '포장단위',
+                        raw_json              JSON COMMENT '원본 JSON 문자열',
                         efcy_qesitm           TEXT COMMENT '효능효과',
                         use_method_qesitm     TEXT COMMENT '사용법',
                         atpn_qesitm           TEXT COMMENT '주의사항',
@@ -507,7 +558,9 @@ class DrugRepository:
                         updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                         INDEX idx_item_name (item_name(200)),
                         INDEX idx_item_name_normalized (item_name_normalized(200)),
+                        INDEX idx_entp_name (entp_name(200)),
                         INDEX idx_is_active (is_active),
+                        INDEX idx_cancel_date (cancel_date),
                         FULLTEXT INDEX ft_item_name (item_name) WITH PARSER ngram
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """

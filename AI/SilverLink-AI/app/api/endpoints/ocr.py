@@ -294,15 +294,17 @@ async def get_alias_suggestions(
 @router.put(
     "/admin/alias-suggestions/{suggestion_id}/approve",
     summary="[관리자] alias 제안 승인",
-    description="PENDING 상태의 alias 제안을 승인하여 실제 alias/error_alias 테이블에 등록합니다.",
+    description="PENDING 상태의 alias 제안을 승인하여 실제 alias/error_alias 테이블에 등록하고 메모리 인덱스를 갱신합니다.",
 )
 @inject_ocr
 async def approve_alias_suggestion(
     suggestion_id: int,
     reviewed_by: str = "admin",
     alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
+    pipeline: MedicationPipeline = Depends(Provide[Container.medication_pipeline]),
 ):
     try:
+        # 1. 원자적 DB 커밋
         result = alias_suggestion_repo.approve_suggestion(
             suggestion_id=suggestion_id,
             reviewed_by=reviewed_by,
@@ -312,6 +314,18 @@ async def approve_alias_suggestion(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=result["message"],
             )
+
+        # 2. DB commit 완료 후 best-effort 메모리 환경 갱신
+        reload_ok = pipeline.reload_dictionary()
+        if reload_ok:
+            result["reload_success"] = True
+            result["message"] = "Alias suggestion approved and dictionary reloaded."
+        else:
+            result["reload_success"] = False
+            result["reload_warning"] = "DB was updated, but dictionary reload failed. Restart AI server or retry reload."
+
+        result["suggestion_id"] = suggestion_id
+        result["review_status"] = "APPROVED"
         return result
     except HTTPException:
         raise
@@ -343,6 +357,9 @@ async def reject_alias_suggestion(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=result["message"],
             )
+
+        result["suggestion_id"] = suggestion_id
+        result["review_status"] = "REJECTED"
         return result
     except HTTPException:
         raise

@@ -174,9 +174,16 @@ def _upsert_error_alias(conn, item_seq: str, error_text: str, normalized: str, r
 # ─────────────────────────────────────────────
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="초기 alias seed 스크립트")
+    parser.add_argument("--force", action="store_true", help="수동 실행 경고 무시")
+    args = parser.parse_args()
+
+    if not args.force:
+        logger.warning("경고: seed_aliases는 이미 자동 매핑 로직으로 대체 또는 실험적으로 사용 중입니다. 실행하려면 --force 플래그를 추가하세요.")
+        return
+
     conn = _get_connection()
-    try:
-        drugs = _fetch_all_drugs(conn)
         logger.info(f"medications_master에서 {len(drugs)}개 약품 로드됨")
 
         alias_count = 0
