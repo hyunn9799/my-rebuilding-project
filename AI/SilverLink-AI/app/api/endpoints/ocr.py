@@ -1,12 +1,14 @@
 from typing import List
 
 from dependency_injector.wiring import Provide
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.core.container import Container
+from app.core.config import configs
 from app.core.middleware import inject_ocr
 from app.ocr.model.drug_model import OCRToken
 from app.ocr.repository.alias_suggestion_repository import AliasSuggestionRepository
+from app.ocr.repository.drug_vector_repository import DrugVectorRepository
 from app.ocr.repository.ocr_result_repository import OcrResultRepository
 from app.ocr.schema.medication_schema import (
     ConfirmMedicationRequest,
@@ -14,14 +16,26 @@ from app.ocr.schema.medication_schema import (
     MedicationInfo,
     MedicationOCRRequest,
     MedicationOCRResponse,
+    OcrResultOwnerResponse,
     PendingConfirmationItem,
     PipelineStageInfo,
+    VectorStatusResponse,
 )
 from app.ocr.services.medication_pipeline import MedicationPipeline
 from app.ocr.services.ocr_service import OcrService
 
 
 router = APIRouter(prefix="/ocr", tags=["ocr"])
+
+
+def verify_internal_secret(
+    secret: str | None = Header(None, alias=configs.CHATBOT_SECRET_HEADER),
+) -> None:
+    if not secret or secret != configs.SILVERLINK_INTERNAL_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal secret",
+        )
 
 
 @router.get("", summary="OCR service health check")
@@ -225,6 +239,50 @@ async def get_pending_confirmations(
 
 
 @router.get(
+    "/internal/results/{request_id}/owner",
+    response_model=OcrResultOwnerResponse,
+    summary="Lookup OCR result owner by requestId",
+)
+@inject_ocr
+async def get_ocr_result_owner(
+    request_id: str,
+    _: None = Depends(verify_internal_secret),
+    ocr_result_repo: OcrResultRepository = Depends(Provide[Container.ocr_result_repository]),
+):
+    owner = ocr_result_repo.get_owner_by_request_id(request_id)
+    if not owner:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"OCR result not found: {request_id}",
+        )
+    if owner.get("user_confirmed") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This request has already been confirmed.",
+        )
+    if owner.get("elderly_user_id") is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="OCR result has no elderly_user_id.",
+        )
+    return OcrResultOwnerResponse(**owner)
+
+
+@router.get(
+    "/internal/vector/status",
+    response_model=VectorStatusResponse,
+    summary="Lookup ChromaDB vector fallback status",
+)
+@inject_ocr
+async def get_vector_status(
+    _: None = Depends(verify_internal_secret),
+    vector_repo: DrugVectorRepository = Depends(Provide[Container.drug_vector_repository]),
+):
+    status_payload = vector_repo.get_status(configs.DRUG_VECTOR_EXPECTED_COUNT)
+    return VectorStatusResponse(**status_payload)
+
+
+@router.get(
     "/admin/alias-suggestions",
     summary="List alias suggestions for admin review",
 )
@@ -233,6 +291,7 @@ async def get_alias_suggestions(
     page: int = 1,
     size: int = 20,
     review_status: str = "PENDING",
+    _: None = Depends(verify_internal_secret),
     alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
 ):
     try:
@@ -257,6 +316,7 @@ async def get_alias_suggestions(
 async def approve_alias_suggestion(
     suggestion_id: int,
     reviewed_by: str = "admin",
+    _: None = Depends(verify_internal_secret),
     alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
     pipeline: MedicationPipeline = Depends(Provide[Container.medication_pipeline]),
 ):
@@ -304,6 +364,7 @@ async def approve_alias_suggestion(
 async def reject_alias_suggestion(
     suggestion_id: int,
     reviewed_by: str = "admin",
+    _: None = Depends(verify_internal_secret),
     alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
 ):
     try:
@@ -335,6 +396,7 @@ async def reject_alias_suggestion(
 )
 @inject_ocr
 async def reload_dictionary(
+    _: None = Depends(verify_internal_secret),
     pipeline: MedicationPipeline = Depends(Provide[Container.medication_pipeline]),
 ):
     try:

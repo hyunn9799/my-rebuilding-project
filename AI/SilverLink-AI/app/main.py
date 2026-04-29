@@ -10,6 +10,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.routes import routers
 from app.core.config import configs
 from app.core.container import Container
+from app.ocr.repository.drug_vector_repository import DrugVectorRepository
 from app.util.class_object import singleton
 from app.callbot.services.callbot_service import orchestrator_engine
 from loguru import logger as loguru_logger
@@ -56,6 +57,39 @@ logging.getLogger("presidio_analyzer").setLevel(logging.ERROR) # Presidio 경고
 
 # logger = logging.getLogger(__name__) # Loguru logger는 전역적으로 사용 가능하므로 제거 혹은 호환성 유지
 logger = logging.getLogger("app.main") # 호환성을 위해 유지하되, 로그는 InterceptHandler를 통해 Loguru로 전달됨
+
+
+def check_vector_status_on_startup() -> None:
+    if not configs.DRUG_VECTOR_STARTUP_CHECK:
+        loguru_logger.info("[startup] ChromaDB vector status check skipped.")
+        return
+
+    try:
+        status_payload = DrugVectorRepository().get_status(configs.DRUG_VECTOR_EXPECTED_COUNT)
+        status = status_payload.get("status")
+        message = status_payload.get("message")
+        count = status_payload.get("count")
+        expected_count = status_payload.get("expected_count")
+        if status == "READY":
+            loguru_logger.info(
+                "[startup] ChromaDB vector fallback ready: count={}, expected={}",
+                count,
+                expected_count,
+            )
+        else:
+            loguru_logger.warning(
+                "[startup] ChromaDB vector fallback degraded: status={}, count={}, expected={}, message={}",
+                status,
+                count,
+                expected_count,
+                message,
+            )
+    except Exception as exc:
+        loguru_logger.warning(
+            "[startup] ChromaDB vector fallback status check failed; startup continues. error={}",
+            exc,
+        )
+
 
 @singleton
 class AppCreator:
@@ -133,6 +167,9 @@ class AppCreator:
                 print("[startup] Backend login successful.")
             except Exception as e:
                 print(f"[startup] Backend login failed (non-fatal): {e}")
+
+            # 5. ChromaDB vector fallback status check (non-fatal)
+            check_vector_status_on_startup()
 
         except Exception as e:
             print(f"[startup] Pre-processing failed (non-fatal): {e}")

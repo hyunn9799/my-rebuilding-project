@@ -59,7 +59,6 @@ public class SecurityConfig {
                                 "/api/welfare/**",
                                 "/api/faqs/**",
                                 "/api/guardians/signup",
-                                "/api/ocr/**",
                                 "/api/policies/latest/**",
                                 "/uploads/**",
                                 "/api/files/download", // 파일 다운로드 허용

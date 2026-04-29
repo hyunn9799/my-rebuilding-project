@@ -114,6 +114,41 @@ class OcrResultRepository:
             if connection:
                 connection.close()
 
+    def get_owner_by_request_id(self, request_id: str) -> Optional[dict]:
+        """권한 확인용 최소 소유자 정보 조회."""
+        connection = None
+        try:
+            connection = self._get_connection()
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT request_id, elderly_user_id, decision_status, user_confirmed
+                    FROM medication_ocr_results
+                    WHERE request_id = %s
+                    """,
+                    (request_id,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+
+                user_confirmed = row.get("user_confirmed")
+                if user_confirmed is not None:
+                    user_confirmed = bool(user_confirmed)
+
+                return {
+                    "request_id": row.get("request_id"),
+                    "elderly_user_id": row.get("elderly_user_id"),
+                    "decision_status": row.get("decision_status"),
+                    "user_confirmed": user_confirmed,
+                }
+        except Exception as e:
+            logger.error("OCR owner lookup failed: request_id={}, error={}", request_id, e)
+            return None
+        finally:
+            if connection:
+                connection.close()
+
     def get_pending_confirmations(
         self,
         elderly_user_id: int,

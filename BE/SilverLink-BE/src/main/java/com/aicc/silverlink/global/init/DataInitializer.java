@@ -9,6 +9,7 @@ import com.aicc.silverlink.domain.user.entity.User;
 import com.aicc.silverlink.domain.user.repository.UserRepository;
 import com.aicc.silverlink.domain.user.entity.UserStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 
 @Component
+@Profile("!prod")
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
 

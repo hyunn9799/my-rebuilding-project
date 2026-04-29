@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 
 
 class OCRTokenInfo(BaseModel):
@@ -95,6 +95,27 @@ class ConfirmMedicationResponse(BaseModel):
     success: bool = Field(..., description="처리 성공 여부")
     message: str = Field("", description="결과 메시지")
     alias_suggestion_created: bool = Field(False, description="alias 제안 생성 여부")
+
+
+class OcrResultOwnerResponse(BaseModel):
+    """requestId 소유자 조회 응답"""
+    request_id: str = Field(..., description="OCR 결과 request_id")
+    elderly_user_id: int = Field(..., description="OCR 결과 소유 어르신 사용자 ID")
+    decision_status: str = Field(..., description="OCR 결과 판정 상태")
+    user_confirmed: Optional[bool] = Field(None, description="None=미확인, True=확정, False=거부")
+
+
+class VectorStatusResponse(BaseModel):
+    """ChromaDB vector fallback 상태 응답"""
+    collection_name: str = Field(..., description="ChromaDB collection name")
+    persist_directory: str = Field(..., description="ChromaDB persist directory")
+    count: Optional[int] = Field(None, description="현재 vector count")
+    expected_count: Optional[int] = Field(None, description="기대 vector count")
+    embedding_model: Optional[str] = Field(None, description="Embedding model name")
+    status: str = Field(..., description="READY, EMPTY, COUNT_MISMATCH, ERROR")
+    message: str = Field(..., description="상태 설명")
+    is_degraded: bool = Field(..., description="검색 품질 저하 가능 여부")
+    checked_at: datetime = Field(..., description="상태 확인 시각")
 
 
 class PendingConfirmationItem(BaseModel):

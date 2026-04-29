@@ -1,4 +1,5 @@
 """약품 벡터 검색 레포지토리 (ChromaDB)."""
+from datetime import datetime, timezone
 from typing import List, Tuple, Optional
 from loguru import logger
 
@@ -127,6 +128,54 @@ class DrugVectorRepository:
     def get_count(self) -> int:
         """컬렉션 내 문서 수"""
         return self._collection.count()
+
+    def get_status(self, expected_count: Optional[int] = None) -> dict:
+        """ChromaDB vector fallback status.
+
+        ChromaDB is a fallback path, so non-ready states are degraded warnings,
+        not service blockers.
+        """
+        checked_at = datetime.now(timezone.utc)
+        normalized_expected = expected_count if expected_count and expected_count > 0 else None
+        try:
+            count = self.get_count()
+            if count == 0:
+                status = "EMPTY"
+                message = "ChromaDB collection is empty. Vector fallback quality may be degraded."
+            elif normalized_expected is not None and count != normalized_expected:
+                status = "COUNT_MISMATCH"
+                message = (
+                    f"ChromaDB count mismatch. expected={normalized_expected}, actual={count}. "
+                    "Vector fallback quality may be degraded."
+                )
+            else:
+                status = "READY"
+                message = "ChromaDB vector fallback is ready."
+
+            return {
+                "collection_name": self.collection_name,
+                "persist_directory": self.persist_directory,
+                "count": count,
+                "expected_count": normalized_expected,
+                "embedding_model": configs.EMBEDDING_MODEL,
+                "status": status,
+                "message": message,
+                "is_degraded": status != "READY",
+                "checked_at": checked_at,
+            }
+        except Exception as e:
+            logger.warning(f"ChromaDB status check failed: {e}")
+            return {
+                "collection_name": self.collection_name,
+                "persist_directory": self.persist_directory,
+                "count": None,
+                "expected_count": normalized_expected,
+                "embedding_model": configs.EMBEDDING_MODEL,
+                "status": "ERROR",
+                "message": "ChromaDB status check failed. Vector fallback quality may be degraded.",
+                "is_degraded": True,
+                "checked_at": checked_at,
+            }
 
     def reset_collection(self) -> None:
         """Drop and recreate the drug embedding collection."""

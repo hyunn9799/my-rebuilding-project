@@ -105,10 +105,11 @@ class AdminAliasControllerTest {
                 .message("rejected")
                 .build();
 
+        ArgumentCaptor<HttpEntity<Void>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
         when(restTemplate.exchange(
                 eq(PYTHON_URL + "/api/ocr/admin/alias-suggestions/11/reject?reviewed_by=Test%20Admin"),
                 eq(HttpMethod.PUT),
-                org.mockito.ArgumentMatchers.<HttpEntity<Void>>any(),
+                entityCaptor.capture(),
                 eq(AliasSuggestionActionResponse.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.ACCEPTED).body(body));
 
@@ -116,6 +117,7 @@ class AdminAliasControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         assertThat(response.getBody()).isSameAs(body);
+        assertThat(entityCaptor.getValue().getHeaders().getFirst(SECRET_HEADER)).isEqualTo(SECRET_KEY);
     }
 
     @Test
@@ -126,10 +128,11 @@ class AdminAliasControllerTest {
                 .message("reloaded")
                 .build();
 
+        ArgumentCaptor<HttpEntity<Void>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
         when(restTemplate.exchange(
                 eq(PYTHON_URL + "/api/ocr/admin/reload-dictionary"),
                 eq(HttpMethod.POST),
-                org.mockito.ArgumentMatchers.<HttpEntity<Void>>any(),
+                entityCaptor.capture(),
                 eq(AliasSuggestionActionResponse.class)))
                 .thenReturn(ResponseEntity.ok(body));
 
@@ -143,5 +146,6 @@ class AdminAliasControllerTest {
                 eq(HttpMethod.POST),
                 org.mockito.ArgumentMatchers.<HttpEntity<Void>>any(),
                 eq(AliasSuggestionActionResponse.class));
+        assertThat(entityCaptor.getValue().getHeaders().getFirst(SECRET_HEADER)).isEqualTo(SECRET_KEY);
     }
 }

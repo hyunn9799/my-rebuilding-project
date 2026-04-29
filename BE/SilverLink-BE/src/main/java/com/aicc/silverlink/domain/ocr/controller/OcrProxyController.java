@@ -1,24 +1,35 @@
 package com.aicc.silverlink.domain.ocr.controller;
 
+import com.aicc.silverlink.domain.assignment.repository.AssignmentRepository;
+import com.aicc.silverlink.domain.guardian.repository.GuardianElderlyRepository;
 import com.aicc.silverlink.domain.ocr.dto.ConfirmMedicationRequest;
 import com.aicc.silverlink.domain.ocr.dto.ConfirmMedicationResponse;
 import com.aicc.silverlink.domain.ocr.dto.OcrValidationRequest;
 import com.aicc.silverlink.domain.ocr.dto.OcrValidationResponse;
+import com.aicc.silverlink.domain.ocr.dto.OcrResultOwnerResponse;
 import com.aicc.silverlink.domain.ocr.dto.PendingConfirmationItem;
 import com.aicc.silverlink.domain.ocr.dto.PythonOcrRequest;
+import com.aicc.silverlink.domain.user.entity.Role;
+import com.aicc.silverlink.domain.user.entity.User;
+import com.aicc.silverlink.domain.user.repository.UserRepository;
+import com.aicc.silverlink.global.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import jakarta.validation.Valid;
 
@@ -37,6 +48,9 @@ import java.util.List;
 public class OcrProxyController {
 
     private final RestTemplate restTemplate;
+    private final UserRepository userRepository;
+    private final GuardianElderlyRepository guardianElderlyRepository;
+    private final AssignmentRepository assignmentRepository;
 
     @Value("${chatbot.python.url:http://localhost:8000}")
     private String pythonAiUrl;
@@ -55,19 +69,22 @@ public class OcrProxyController {
     }
 
     @PostMapping("/validate-medication")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'GUARDIAN', 'ELDERLY')")
     @Operation(summary = "약 정보 OCR 검증", description = "Luxia OCR 결과를 Python AI 서버의 LLM으로 검증하고 약 정보를 추출합니다.")
     public ResponseEntity<OcrValidationResponse> validateMedication(
             @Valid @RequestBody OcrValidationRequest request) {
 
+        Long elderlyUserId = resolveReadableElderlyUserId(request.getElderlyUserId());
+
         log.info("OCR validation request received: elderlyUserId={}, textLength={}",
-                request.getElderlyUserId(),
+                elderlyUserId,
                 request.getOcrText() != null ? request.getOcrText().length() : 0);
 
         try {
             // Python AI 서버로 보낼 요청 생성 (snake_case 변환)
             PythonOcrRequest pythonRequest = PythonOcrRequest.builder()
                     .ocrText(request.getOcrText())
-                    .elderlyUserId(request.getElderlyUserId())
+                    .elderlyUserId(elderlyUserId)
                     .build();
 
             // HTTP 헤더 설정 (secret 헤더 포함)
@@ -91,6 +108,14 @@ public class OcrProxyController {
 
             return ResponseEntity.ok(response);
 
+        } catch (RestClientResponseException e) {
+            log.error("Python OCR validation service returned error: status={}, body={}",
+                    e.getStatusCode(), e.getResponseBodyAsString(), e);
+            OcrValidationResponse errorResponse = OcrValidationResponse.builder()
+                    .success(false)
+                    .errorMessage("OCR 검증 서비스 오류: " + aiErrorMessage(e))
+                    .build();
+            return ResponseEntity.status(e.getStatusCode()).body(errorResponse);
         } catch (Exception e) {
             log.error("Error calling Python OCR service", e);
 
@@ -105,12 +130,15 @@ public class OcrProxyController {
     }
 
     @PostMapping("/confirm-medication")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'GUARDIAN', 'ELDERLY')")
     @Operation(summary = "OCR 약품 후보 확정/거부", description = "사용자가 OCR 약품 후보를 확정하거나 거부한 결과를 Python AI 서버에 전달합니다.")
     public ResponseEntity<ConfirmMedicationResponse> confirmMedication(
             @Valid @RequestBody ConfirmMedicationRequest request) {
 
         log.info("OCR confirmation request received: requestId={}, selectedItemSeq={}, confirmed={}",
                 request.getRequestId(), request.getSelectedItemSeq(), request.getConfirmed());
+
+        resolveConfirmOwnerElderlyUserId(request.getRequestId());
 
         try {
             String pythonUrl = pythonAiUrl + "/api/ocr/confirm-medication";
@@ -123,6 +151,15 @@ public class OcrProxyController {
                     ConfirmMedicationResponse.class);
 
             return ResponseEntity.status(responseEntity.getStatusCode()).body(responseEntity.getBody());
+        } catch (RestClientResponseException e) {
+            log.error("Python OCR confirmation service returned error: status={}, body={}",
+                    e.getStatusCode(), e.getResponseBodyAsString(), e);
+            ConfirmMedicationResponse errorResponse = ConfirmMedicationResponse.builder()
+                    .success(false)
+                    .message("OCR 확정 처리 실패: " + aiErrorMessage(e))
+                    .aliasSuggestionCreated(false)
+                    .build();
+            return ResponseEntity.status(e.getStatusCode()).body(errorResponse);
         } catch (Exception e) {
             log.error("Error calling Python OCR confirmation service", e);
             ConfirmMedicationResponse errorResponse = ConfirmMedicationResponse.builder()
@@ -134,11 +171,43 @@ public class OcrProxyController {
         }
     }
 
+    private Long resolveConfirmOwnerElderlyUserId(String requestId) {
+        String pythonUrl = UriComponentsBuilder
+                .fromUriString(pythonAiUrl + "/api/ocr/internal/results/{requestId}/owner")
+                .buildAndExpand(requestId)
+                .encode()
+                .toUriString();
+        HttpEntity<Void> entity = new HttpEntity<>(createJsonHeaders());
+        try {
+            ResponseEntity<OcrResultOwnerResponse> responseEntity = restTemplate.exchange(
+                    pythonUrl,
+                    HttpMethod.GET,
+                    entity,
+                    OcrResultOwnerResponse.class);
+
+            OcrResultOwnerResponse owner = responseEntity.getBody();
+            if (owner == null || owner.getElderlyUserId() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "OCR result owner is missing");
+            }
+            assertCanReadElderlyOcr(owner.getElderlyUserId());
+            return owner.getElderlyUserId();
+        } catch (RestClientResponseException e) {
+            throw new ResponseStatusException(
+                    e.getStatusCode(),
+                    "OCR owner lookup failed: " + e.getResponseBodyAsString(),
+                    e);
+        }
+    }
+
     @GetMapping("/pending-confirmations/{elderlyUserId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'GUARDIAN', 'ELDERLY')")
     @Operation(summary = "미확정 OCR 결과 목록", description = "사용자 확인이 필요한 OCR 결과 목록을 Python AI 서버에서 조회합니다.")
     public ResponseEntity<List<PendingConfirmationItem>> getPendingConfirmations(
             @PathVariable Long elderlyUserId) {
 
+        assertCanReadElderlyOcr(elderlyUserId);
         log.info("OCR pending confirmations request received: elderlyUserId={}", elderlyUserId);
 
         try {
@@ -154,9 +223,70 @@ public class OcrProxyController {
             PendingConfirmationItem[] body = responseEntity.getBody();
             List<PendingConfirmationItem> items = body == null ? List.of() : Arrays.asList(body);
             return ResponseEntity.status(responseEntity.getStatusCode()).body(items);
+        } catch (RestClientResponseException e) {
+            log.error("Python OCR pending confirmation service returned error: status={}, body={}",
+                    e.getStatusCode(), e.getResponseBodyAsString(), e);
+            return ResponseEntity.status(e.getStatusCode()).body(List.of());
         } catch (Exception e) {
             log.error("Error calling Python OCR pending confirmation service", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(List.of());
         }
+    }
+
+    private String aiErrorMessage(RestClientResponseException e) {
+        String body = e.getResponseBodyAsString();
+        if (body != null && !body.isBlank()) {
+            return body;
+        }
+        return e.getStatusText();
+    }
+
+    private Long resolveReadableElderlyUserId(Long requestedElderlyUserId) {
+        User requester = currentActiveUser();
+        Long elderlyUserId = requestedElderlyUserId;
+        if (elderlyUserId == null && requester.getRole() == Role.ELDERLY) {
+            elderlyUserId = requester.getId();
+        }
+        if (elderlyUserId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "elderlyUserId is required");
+        }
+        assertCanReadElderlyOcr(requester, elderlyUserId);
+        return elderlyUserId;
+    }
+
+    private void assertCanReadElderlyOcr(Long elderlyUserId) {
+        assertCanReadElderlyOcr(currentActiveUser(), elderlyUserId);
+    }
+
+    private void assertCanReadElderlyOcr(User requester, Long elderlyUserId) {
+        if (elderlyUserId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "elderlyUserId is required");
+        }
+        Role role = requester.getRole();
+        if (role == Role.ADMIN) {
+            return;
+        }
+        if (role == Role.ELDERLY && requester.getId().equals(elderlyUserId)) {
+            return;
+        }
+        if (role == Role.GUARDIAN
+                && guardianElderlyRepository.existsByGuardianIdAndElderlyId(requester.getId(), elderlyUserId)) {
+            return;
+        }
+        if (role == Role.COUNSELOR
+                && assignmentRepository.existsByCounselorIdAndElderlyIdAndStatusActive(requester.getId(), elderlyUserId)) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "OCR access denied");
+    }
+
+    private User currentActiveUser() {
+        Long userId = SecurityUtils.currentUserId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "authenticated user not found"));
+        if (!user.isActive()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "inactive user");
+        }
+        return user;
     }
 }

@@ -53,6 +53,12 @@ class Configs(BaseSettings):
     # Spring Boot backend
     SPRING_BOOT_URL: str = os.getenv("SPRING_BOOT_URL", "http://localhost:8080")
     SPRING_BOOT_API_TOKEN: str = os.getenv("SPRING_BOOT_API_TOKEN", "")
+    CHATBOT_SECRET_HEADER: str = os.getenv("CHATBOT_SECRET_HEADER", "X-SilverLink-Secret")
+    SILVERLINK_INTERNAL_SECRET: str = os.getenv(
+        "SILVERLINK_INTERNAL_SECRET",
+        os.getenv("CHATBOT_SECRET_KEY", "X-SilverLink-Key!"),
+    )
+    CHATBOT_SECRET_KEY: str = os.getenv("CHATBOT_SECRET_KEY", SILVERLINK_INTERNAL_SECRET)
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -131,6 +137,13 @@ class Configs(BaseSettings):
     CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
     DRUG_COLLECTION_NAME: str = os.getenv("DRUG_COLLECTION_NAME", "drug_embeddings")
     DRUG_MATCH_THRESHOLD: float = float(os.getenv("DRUG_MATCH_THRESHOLD", "0.7"))
+    DRUG_VECTOR_EXPECTED_COUNT: int = int(os.getenv("DRUG_VECTOR_EXPECTED_COUNT", "35291") or "0")
+    DRUG_VECTOR_STARTUP_CHECK: bool = os.getenv("DRUG_VECTOR_STARTUP_CHECK", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
     class Config:
         case_sensitive = True
