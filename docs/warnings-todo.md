@@ -1,5 +1,30 @@
 # Warnings TODO
 
+## 2026-04-30 Update
+
+Current validation status:
+
+- AI targeted tests passed: `test_analyze_ocr_quality.py` + `test_ocr_owner_endpoint.py` -> 18 passed, 6 warnings.
+- BE OCR tests passed: `gradle-jdk21.ps1 test --tests "com.aicc.silverlink.domain.ocr.*"`.
+- FE build passed: `npm.cmd run build`.
+- Local MySQL check passed: `SELECT 1`.
+- Local MySQL query validation passed: `EXPLAIN` for alias priority ordering query.
+
+Open warnings to handle later:
+
+- FE build warning: Browserslist `caniuse-lite` data is outdated.
+  - Suggested action: run `npx update-browserslist-db@latest`, inspect lockfile changes, and verify `npm.cmd run build`.
+- FE build warning: some Vite chunks exceed 500 KB after minification.
+  - Suggested action: inspect the largest `index-*.js` bundle contributors and consider route-level lazy loading or `vite.config.ts` `manualChunks`.
+- AI pytest warning count: targeted OCR tests pass with 6 warnings.
+  - Suggested action: run pytest with warning detail enabled and decide whether to fix source warnings or add explicit filters in `pytest.ini`.
+- BE Gradle output: `Consider enabling configuration cache` appears after successful test runs.
+  - Suggested action: evaluate Gradle configuration cache compatibility later; not blocking OCR work.
+- BE JPA slice test runtime is still relatively high because entity scanning creates/drops many tables.
+  - Suggested action: later narrow OCR JPA test configuration or add a focused repository/service test profile if test time becomes a CI issue.
+
+---
+
 2026-04-29 기준으로 빌드/검증 중 확인했지만 이번 작업 범위에서는 보류한 항목입니다.
 
 ## Frontend

@@ -74,6 +74,13 @@ def _safe_int(value: Any, default: int = 1) -> int:
         return default
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _write_json(path: str | None, payload: Any) -> None:
     if not path:
         return
@@ -540,6 +547,7 @@ def alias_candidate_payload(actions: list[dict[str, Any]]) -> list[dict[str, Any
         alias_name = action.get("alias_name")
         if not item_seq or not alias_name:
             continue
+        priority_score, priority_reason = alias_candidate_priority(action)
         payload.append(
             {
                 "suggestion_type": "alias" if action_type == "alias_candidate" else "error_alias",
@@ -550,9 +558,29 @@ def alias_candidate_payload(actions: list[dict[str, Any]]) -> list[dict[str, Any
                 "frequency": _safe_int(action.get("frequency")),
                 "reason": action.get("reason"),
                 "source_request_id": action.get("request_id"),
+                "priority_score": priority_score,
+                "priority_reason": priority_reason,
             }
         )
     return payload
+
+
+def alias_candidate_priority(action: dict[str, Any]) -> tuple[int, str]:
+    frequency = _safe_int(action.get("frequency"), default=1)
+    action_type = str(action.get("action_type") or "")
+    source_bonus = 20 if str(action.get("source") or "ocr_quality_report") == "ocr_quality_report" else 0
+    type_bonus = 10 if action_type == "error_alias_candidate" else 0
+    score_bonus = 5 if _safe_float(action.get("score"), default=1.0) >= 0.8 else 0
+    priority_score = min(frequency, 20) * 3 + source_bonus + type_bonus + score_bonus
+
+    reasons = [f"frequency={frequency}"]
+    if source_bonus:
+        reasons.append("source=ocr_quality_report")
+    if type_bonus:
+        reasons.append("type=error_alias")
+    if score_bonus:
+        reasons.append("score>=0.8")
+    return priority_score, ", ".join(reasons)
 
 
 def write_alias_candidates(path: str | None, actions: list[dict[str, Any]]) -> None:

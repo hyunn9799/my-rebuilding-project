@@ -117,12 +117,19 @@ class AliasSuggestionRepository:
                     FROM medication_alias_suggestions s
                     LEFT JOIN medications_master m ON m.item_seq = s.item_seq
                     WHERE s.review_status = 'PENDING'
-                    ORDER BY s.frequency DESC, s.created_at DESC
+                    ORDER BY
+                        (LEAST(s.frequency, 20) * 3)
+                        + CASE WHEN s.source = 'ocr_quality_report' THEN 20 ELSE 0 END
+                        + CASE WHEN s.suggestion_type = 'error_alias' THEN 10 ELSE 0 END DESC,
+                        s.frequency DESC,
+                        s.created_at DESC
                     LIMIT %s
                     """,
                     (limit,),
                 )
-                return list(cursor.fetchall())
+                items = list(cursor.fetchall())
+                self._apply_priority(items)
+                return items
         except Exception as e:
             logger.error(f"get_pending_suggestions failed: {e}")
             return []
@@ -171,12 +178,18 @@ class AliasSuggestionRepository:
                     FROM medication_alias_suggestions s
                     LEFT JOIN medications_master m ON m.item_seq = s.item_seq
                     {where_clause}
-                    ORDER BY s.frequency DESC, s.created_at DESC
+                    ORDER BY
+                        (LEAST(s.frequency, 20) * 3)
+                        + CASE WHEN s.source = 'ocr_quality_report' THEN 20 ELSE 0 END
+                        + CASE WHEN s.suggestion_type = 'error_alias' THEN 10 ELSE 0 END DESC,
+                        s.frequency DESC,
+                        s.created_at DESC
                     LIMIT %s OFFSET %s
                     """,
                     tuple(params + [size, offset]),
                 )
                 items = list(cursor.fetchall())
+                self._apply_priority(items)
 
                 # datetime → str 변환
                 for item in items:
@@ -356,6 +369,20 @@ class AliasSuggestionRepository:
     # ──────────────────────────────────────────────
     # 테이블 생성 (fallback)
     # ──────────────────────────────────────────────
+
+    def _apply_priority(self, items: List[dict]) -> None:
+        for item in items:
+            frequency = int(item.get("frequency") or 0)
+            source_bonus = 20 if item.get("source") == "ocr_quality_report" else 0
+            type_bonus = 10 if item.get("suggestion_type") == "error_alias" else 0
+            priority_score = min(frequency, 20) * 3 + source_bonus + type_bonus
+            reasons = [f"frequency={frequency}"]
+            if source_bonus:
+                reasons.append("source=ocr_quality_report")
+            if type_bonus:
+                reasons.append("type=error_alias")
+            item["priority_score"] = priority_score
+            item["priority_reason"] = ", ".join(reasons)
 
     def create_table_if_not_exists(self):
         """medication_alias_suggestions 테이블 생성 (schema.sql 기준)."""

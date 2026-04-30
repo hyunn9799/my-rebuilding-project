@@ -126,6 +126,8 @@ def test_alias_candidate_payload_and_json_export(tmp_path):
             "frequency": 2,
             "reason": "pending_confirmation_method=prefix",
             "source_request_id": "req-1",
+            "priority_score": 31,
+            "priority_reason": "frequency=2, source=ocr_quality_report, score>=0.8",
         }
     ]
     assert json.loads(output.read_text(encoding="utf-8")) == payload

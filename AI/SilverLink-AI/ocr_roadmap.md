@@ -894,14 +894,48 @@ Result:
 
 Priority: medium  
 Estimated effort: 6-10 hours
+Current status: in progress, Phase 26A complete and Phase 26B mostly complete
+
+Progress:
+
+1. Phase 26A completed: added `OcrQualityReportRunServiceTest` with JPA-backed coverage for report/upsert persistence, limit clamping, and trend delta calculation.
+2. Phase 26B partially completed: added computed alias candidate `priority_score` and `priority_reason` without changing the MySQL schema.
+3. Alias suggestion listing now orders by computed priority first, then frequency and created time.
+4. Admin Alias Management displays the priority score badge with the priority reason as hover text.
+5. Local MySQL is reachable and the computed priority ordering query passes `EXPLAIN`.
+6. Redis is available locally, but Phase 26 changes so far do not require Redis behavior changes.
 
 Recommended tasks:
 
-1. Add a scheduled or manually triggered job policy for periodic quality report generation in operations environments.
-2. Store comparison snapshots if the team wants long-term before/after trend charts beyond the latest two report runs.
-3. Add prioritization fields for alias candidates, such as risk score, frequency score, or recommended review order.
-4. Split the Alias Management OCR operations area into a dedicated admin OCR Operations page if the panel keeps growing.
-5. Add service/repository tests around `OcrQualityReportRunService` trend calculations when persistence behavior becomes shared by automation.
+1. Finish Phase 26B by adding an explicit UI sort/filter control if operators need to switch between priority, frequency, and newest.
+2. Add a dedicated MySQL integration test profile for alias suggestion priority ordering if the local DB contract needs to be enforced in CI.
+3. Add a scheduled or manually triggered job policy for periodic quality report generation in operations environments.
+4. Store comparison snapshots if the team wants long-term before/after trend charts beyond the latest two report runs.
+5. Split the Alias Management OCR operations area into a dedicated admin OCR Operations page if the panel keeps growing.
+
+Verification:
+
+```powershell
+cd AI\SilverLink-AI
+.\.venv\Scripts\python.exe -m pytest tests/unit_tests/test_analyze_ocr_quality.py tests/unit_tests/test_ocr_owner_endpoint.py
+
+cd BE\SilverLink-BE
+powershell -ExecutionPolicy Bypass -File .\scripts\gradle-jdk21.ps1 test --tests "com.aicc.silverlink.domain.ocr.*"
+
+cd FE\SilverLink-FE
+npm.cmd run build
+```
+
+Additional local check:
+
+- MySQL `SELECT 1`: success
+- MySQL `EXPLAIN` for alias priority ordering query: success
+- AI compileall for `scripts/analyze_ocr_quality.py` and `app/ocr/repository/alias_suggestion_repository.py`: success
+
+Warnings:
+
+- FE `npm.cmd run build` still prints Browserslist `caniuse-lite` age and large chunk warnings. Tracked in `docs/warnings-todo.md`.
+- AI pytest currently passes with 6 warnings. Warning detail cleanup is tracked in `docs/warnings-todo.md`.
 
 ---
 ## 5. 추천 실행 순서

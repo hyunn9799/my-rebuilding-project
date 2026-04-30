@@ -514,6 +514,15 @@ const AliasManagement = () => {
                             <Hash className="h-3 w-3" />
                             {item.frequency}회
                           </Badge>
+                          {typeof item.priority_score === "number" && (
+                            <Badge
+                              variant="outline"
+                              className="border-indigo-200 bg-indigo-50 text-xs text-indigo-700"
+                              title={item.priority_reason || undefined}
+                            >
+                              priority {item.priority_score}
+                            </Badge>
+                          )}
                           {item.source && (
                             <Badge variant="outline" className="text-xs">
                               {item.source}

@@ -13,6 +13,8 @@ export interface AliasSuggestionItem {
     source_request_id?: string;
     review_status: string;
     frequency: number;
+    priority_score?: number;
+    priority_reason?: string;
     is_active: number;
     reviewed_by?: string;
     reviewed_at?: string;

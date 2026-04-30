@@ -173,6 +173,7 @@ async def test_run_quality_report_returns_summary(monkeypatch):
     assert response.manual_review_count == 1
     assert response.normalization_candidate_count == 1
     assert response.alias_candidates[0]["item_seq"] == "A001"
+    assert response.alias_candidates[0]["priority_score"] == 28
 
 
 @pytest.mark.asyncio

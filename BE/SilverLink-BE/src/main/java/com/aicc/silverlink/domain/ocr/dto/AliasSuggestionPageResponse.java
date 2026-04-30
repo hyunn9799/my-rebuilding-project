@@ -54,6 +54,12 @@ public class AliasSuggestionPageResponse {
 
         private Integer frequency;
 
+        @JsonProperty("priority_score")
+        private Integer priorityScore;
+
+        @JsonProperty("priority_reason")
+        private String priorityReason;
+
         @JsonProperty("is_active")
         private Integer isActive;
 
