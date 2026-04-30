@@ -184,6 +184,8 @@ def main():
         return
 
     conn = _get_connection()
+    try:
+        drugs = _fetch_all_drugs(conn)
         logger.info(f"medications_master에서 {len(drugs)}개 약품 로드됨")
 
         alias_count = 0

@@ -55,6 +55,7 @@ public class MedicationService {
                 .startDate(request.getStartDate() != null ? request.getStartDate() : LocalDate.now())
                 .endDate(request.getEndDate())
                 .createdBy(user)
+                .sourceOcrRequestId(normalizeOcrRequestId(request.getSourceOcrRequestId()))
                 .build();
 
         MedicationSchedule savedSchedule = scheduleRepository.save(schedule);
@@ -160,5 +161,12 @@ public class MedicationService {
         }
         
         return scheduleTimes;
+    }
+
+    private String normalizeOcrRequestId(String sourceOcrRequestId) {
+        if (sourceOcrRequestId == null || sourceOcrRequestId.isBlank()) {
+            return null;
+        }
+        return sourceOcrRequestId.trim();
     }
 }

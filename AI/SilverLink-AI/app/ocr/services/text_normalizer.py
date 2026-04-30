@@ -74,6 +74,10 @@ class TextNormalizer:
         rf"(?<!\d)(?P<value>\d(?:\s+\d){{1,5}})\s*(?P<unit>{UNIT_PATTERN})(?![a-zA-Z])",
         re.IGNORECASE,
     )
+    SPACED_OCR_ZERO_DOSAGE_PATTERN = re.compile(
+        rf"(?<!\d)(?P<value>\d(?:\s+[\doO]){{1,5}})\s*(?P<unit>{UNIT_PATTERN})(?![a-zA-Z])",
+        re.IGNORECASE,
+    )
     OCR_ZERO_DOSAGE_PATTERN = re.compile(
         rf"(?P<value>\d[\doO]{{1,5}})\s*(?P<unit>{UNIT_PATTERN})(?![a-zA-Z])",
         re.IGNORECASE,
@@ -145,6 +149,7 @@ class TextNormalizer:
     def normalize_text(self, text: str) -> str:
         text = unicodedata.normalize("NFKC", text)
         text = text.replace("\u00b5", "\u03bc")
+        text = self.SPACED_OCR_ZERO_DOSAGE_PATTERN.sub(self._join_spaced_ocr_zero_digits, text)
         text = self.SPACED_DIGIT_DOSAGE_PATTERN.sub(self._join_spaced_digits, text)
         text = self.OCR_ZERO_DOSAGE_PATTERN.sub(self._fix_ocr_zero_digits, text)
         text = self.NOISE_PATTERN.sub(" ", text)
@@ -161,6 +166,11 @@ class TextNormalizer:
 
     def _join_spaced_digits(self, match: re.Match) -> str:
         value = re.sub(r"\s+", "", match.group("value"))
+        return f"{value}{match.group('unit')}"
+
+    def _join_spaced_ocr_zero_digits(self, match: re.Match) -> str:
+        value = re.sub(r"\s+", "", match.group("value"))
+        value = value.replace("O", "0").replace("o", "0")
         return f"{value}{match.group('unit')}"
 
     def _fix_ocr_zero_digits(self, match: re.Match) -> str:

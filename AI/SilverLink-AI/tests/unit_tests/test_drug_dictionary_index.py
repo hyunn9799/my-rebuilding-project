@@ -173,6 +173,11 @@ def test_local_reload_success_replaces_index():
     result = index.reload()
     
     assert result is True
+    stats = index.reload_stats()
+    assert stats["success"] is True
+    assert stats["drug_count"] == 1
+    assert stats["alias_count"] >= 1
+    assert "elapsed_ms" in stats
     # The new alias should now match
     match = index.match("타이", 0.7)
     assert match.method == "alias"
@@ -207,5 +212,9 @@ def test_local_reload_failure_keeps_existing_index():
     
     # 3. Validation
     assert result is False
+    stats = index.reload_stats()
+    assert stats["success"] is False
+    assert stats["existing_index_kept"] is True
+    assert stats["drug_count"] == 1
     # The exact match should still work using the old index
     assert index.match("타이레놀정500mg", 0.7).method == "exact"

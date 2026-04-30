@@ -1,3 +1,6 @@
+from collections import Counter
+import json
+from pathlib import Path
 from typing import List
 
 from dependency_injector.wiring import Provide
@@ -19,10 +22,15 @@ from app.ocr.schema.medication_schema import (
     OcrResultOwnerResponse,
     PendingConfirmationItem,
     PipelineStageInfo,
+    QualityReportRunRequest,
+    QualityReportRunResponse,
+    QualityReportUpsertRequest,
+    QualityReportUpsertResponse,
     VectorStatusResponse,
 )
 from app.ocr.services.medication_pipeline import MedicationPipeline
 from app.ocr.services.ocr_service import OcrService
+from scripts import analyze_ocr_quality
 
 
 router = APIRouter(prefix="/ocr", tags=["ocr"])
@@ -282,6 +290,94 @@ async def get_vector_status(
     return VectorStatusResponse(**status_payload)
 
 
+def _quality_action_counts(actions: list[dict]) -> Counter:
+    return Counter(str(action.get("action_type") or "") for action in actions if action.get("action_type"))
+
+
+def _quality_report_response(metrics: dict, include_candidates: bool) -> QualityReportRunResponse:
+    actions = metrics.get("recommended_actions", [])
+    action_counts = _quality_action_counts(actions)
+    alias_candidates = analyze_ocr_quality.alias_candidate_payload(actions)
+    return QualityReportRunResponse(
+        success=True,
+        generated_at=metrics.get("generated_at", ""),
+        decision_counts=metrics.get("decision_counts", []),
+        suggestion_counts=metrics.get("suggestion_counts", []),
+        match_method_counts=metrics.get("match_method_counts", []),
+        recommended_action_counts=dict(action_counts),
+        alias_candidate_count=action_counts.get("alias_candidate", 0) + action_counts.get("error_alias_candidate", 0),
+        manual_review_count=action_counts.get("manual_review", 0),
+        normalization_candidate_count=action_counts.get("normalization_candidate", 0),
+        report_markdown=analyze_ocr_quality.render_markdown(metrics),
+        alias_candidates=alias_candidates if include_candidates else [],
+        message="OCR quality report generated.",
+    )
+
+
+@router.post(
+    "/admin/quality-report/run",
+    response_model=QualityReportRunResponse,
+    summary="Run OCR quality report for admin review",
+)
+@inject_ocr
+async def run_quality_report(
+    request: QualityReportRunRequest,
+    _: None = Depends(verify_internal_secret),
+):
+    try:
+        metrics = analyze_ocr_quality.collect_quality_metrics(limit=request.limit)
+        response = _quality_report_response(metrics, request.include_candidates)
+        if request.persist_files:
+            Path("docs").mkdir(parents=True, exist_ok=True)
+            Path("docs/ocr_quality_report.md").write_text(response.report_markdown, encoding="utf-8")
+            Path("docs/ocr_alias_candidates.json").write_text(
+                json.dumps(response.alias_candidates, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        return response
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OCR quality report error: {exc}",
+        )
+
+
+@router.post(
+    "/admin/quality-report/upsert-alias-candidates",
+    response_model=QualityReportUpsertResponse,
+    summary="Upsert OCR quality report alias candidates",
+)
+@inject_ocr
+async def upsert_quality_report_alias_candidates(
+    request: QualityReportUpsertRequest,
+    _: None = Depends(verify_internal_secret),
+):
+    if not request.confirm_write:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="confirm_write must be true to upsert alias candidates.",
+        )
+
+    try:
+        metrics = analyze_ocr_quality.collect_quality_metrics(limit=request.limit)
+        actions = metrics.get("recommended_actions", [])
+        candidates = analyze_ocr_quality.alias_candidate_payload(actions)
+        upserted_count = analyze_ocr_quality.upsert_alias_candidates(actions)
+        return QualityReportUpsertResponse(
+            success=True,
+            upserted_count=upserted_count,
+            candidate_count=len(candidates),
+            skipped_count=max(0, len(actions) - len(candidates)),
+            message=f"Upserted {upserted_count} alias candidate(s).",
+            generated_at=metrics.get("generated_at"),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OCR quality alias candidate upsert error: {exc}",
+        )
+
+
 @router.get(
     "/admin/alias-suggestions",
     summary="List alias suggestions for admin review",
@@ -405,9 +501,18 @@ async def reload_dictionary(
         # worker that handles the request. Use rolling restart, version polling,
         # Redis pub/sub, or a similar synchronization strategy for production.
         ok = pipeline.reload_dictionary()
+        reload_stats = pipeline.reload_dictionary_stats()
         if ok:
-            return {"success": True, "message": "LocalDrugIndex reload completed"}
-        return {"success": False, "message": "LocalDrugIndex reload failed. Existing index was kept."}
+            return {
+                "success": True,
+                "message": "LocalDrugIndex reload completed",
+                **reload_stats,
+            }
+        return {
+            "success": False,
+            "message": "LocalDrugIndex reload failed. Existing index was kept.",
+            **reload_stats,
+        }
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

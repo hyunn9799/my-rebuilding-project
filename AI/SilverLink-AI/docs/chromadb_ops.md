@@ -125,3 +125,54 @@ FE는 이 endpoint를 직접 호출하지 않는다. BE admin proxy를 통해서
 
 - BE proxy 후보: `GET /api/admin/ocr/vector-status`
 - FE 후보: 관리자 AI/OCR 상태 화면에 count와 status 표시
+## Phase 19 운영 점검 명령
+
+Windows 로컬 실행은 항상 AI 가상환경의 Python을 명시한다.
+
+OCR 품질 리포트 생성, alias 후보 upsert, 관리자 승인 절차는 `docs/ocr_ops.md`를 따른다.
+
+```powershell
+cd AI\SilverLink-AI
+.\.venv\Scripts\python.exe -m pytest tests/unit_tests/test_drug_dictionary_index.py tests/unit_tests/test_medication_pipeline.py tests/unit_tests/test_ocr_owner_endpoint.py
+.\.venv\Scripts\python.exe -m compileall -f app/ocr app/api app/core
+```
+
+ChromaDB count 확인:
+
+```powershell
+cd AI\SilverLink-AI
+.\.venv\Scripts\python.exe -c "from app.ocr.repository.drug_vector_repository import DrugVectorRepository; repo=DrugVectorRepository(); print(repo.collection_name, repo.persist_directory, repo.get_count())"
+```
+
+AI 내부 vector status API 확인:
+
+```powershell
+curl.exe -H "X-SilverLink-Secret: <secret>" http://localhost:8000/api/ocr/internal/vector/status
+```
+
+BE 관리자 proxy 확인:
+
+```powershell
+curl.exe -H "Authorization: Bearer <admin-token>" http://localhost:8080/api/admin/ocr/vector-status
+```
+
+Dictionary reload 확인:
+
+```powershell
+curl.exe -X POST -H "X-SilverLink-Secret: <secret>" http://localhost:8000/api/ocr/admin/reload-dictionary
+```
+
+reload 응답에는 운영 확인용 필드가 포함된다.
+
+- `success`
+- `message`
+- `elapsed_ms`
+- `drug_count`
+- `alias_count`
+- `error_alias_count`
+- `ngram_token_count`
+- `existing_index_kept`
+
+`success=false`이고 `existing_index_kept=true`이면 DB reload는 실패했지만 기존 메모리 인덱스는 계속 사용 중이라는 의미다. 이 경우 AI 서버 재시작 전까지 기존 alias 상태로 동작하므로 DB 연결과 alias 테이블 상태를 먼저 확인한 뒤 reload를 재시도한다.
+
+Vector 검색 로그에는 `query`, `candidates`, `best_score`, `elapsed_ms`가 남는다. 운영에서 latency가 튀는 경우 embedding API 지연, ChromaDB volume 상태, MySQL 상세 조회 지연을 순서대로 확인한다.

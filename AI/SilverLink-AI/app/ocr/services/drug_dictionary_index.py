@@ -96,6 +96,7 @@ class DrugDictionaryIndex:
         # _current holds the fully-built index reference.
         # match() reads from _current so that a partial swap never occurs.
         self._current: Optional[DrugDictionaryIndex] = None
+        self.last_reload_stats: Dict[str, Any] = {}
 
         self.exact_map: Dict[str, List[str]] = {}
         self.alias_map: Dict[str, List[AliasSummary]] = {}
@@ -140,6 +141,12 @@ class DrugDictionaryIndex:
                 self._loaded = True
                 self._load_failed = False
                 elapsed_ms = (time.perf_counter() - started) * 1000
+                self.last_reload_stats = self._stats_from_index(
+                    new_index,
+                    success=True,
+                    elapsed_ms=elapsed_ms,
+                    message="Dictionary index loaded.",
+                )
                 logger.info(
                     "Drug dictionary index loaded: drugs={}, aliases={}, error_aliases={}, ngram_tokens={}, elapsed_ms={:.1f}",
                     len(new_index.drug_summary_map),
@@ -151,6 +158,11 @@ class DrugDictionaryIndex:
                 return self.loaded
             except Exception as exc:
                 self._load_failed = True
+                self.last_reload_stats = {
+                    "success": False,
+                    "message": f"Dictionary index load failed: {exc}",
+                    "existing_index_kept": self.loaded,
+                }
                 logger.warning("Drug dictionary index load failed; using MySQL fallback: {}", exc)
                 return False
 
@@ -167,6 +179,11 @@ class DrugDictionaryIndex:
         try:
             if self.repo is None:
                 logger.warning("Cannot reload: drug_repository is not configured.")
+                self.last_reload_stats = {
+                    "success": False,
+                    "message": "drug_repository is not configured.",
+                    "existing_index_kept": self.loaded,
+                }
                 return False
 
             with self._load_lock:
@@ -187,6 +204,12 @@ class DrugDictionaryIndex:
                 self._loaded = True
                 self._load_failed = False
                 elapsed_ms = (time.perf_counter() - started) * 1000
+                self.last_reload_stats = self._stats_from_index(
+                    new_index,
+                    success=True,
+                    elapsed_ms=elapsed_ms,
+                    message="Dictionary reload completed.",
+                )
                 
                 logger.info(
                     "DrugDictionaryIndex reloaded successfully: drugs={}, aliases={}, error_aliases={}, ngram_tokens={}, elapsed_ms={:.1f}",
@@ -197,9 +220,21 @@ class DrugDictionaryIndex:
                     elapsed_ms,
                 )
                 return True
-        except Exception:
+        except Exception as exc:
+            self.last_reload_stats = {
+                "success": False,
+                "message": f"Dictionary reload failed: {exc}",
+                "existing_index_kept": self.loaded,
+                "drug_count": len(self.drug_summary_map),
+                "alias_count": sum(len(v) for v in self.alias_map.values()),
+                "error_alias_count": sum(len(v) for v in self.error_alias_map.values()),
+                "ngram_token_count": len(self.ngram_index),
+            }
             logger.exception("DrugDictionaryIndex reload failed. Existing index will be kept.")
             return False
+
+    def reload_stats(self) -> Dict[str, Any]:
+        return dict(self.last_reload_stats)
 
     @classmethod
     def build(
@@ -472,3 +507,23 @@ class DrugDictionaryIndex:
         result = list(best_by_seq.values())
         result.sort(key=lambda c: c.score, reverse=True)
         return result
+
+    @staticmethod
+    def _stats_from_index(
+        index: "DrugDictionaryIndex",
+        *,
+        success: bool,
+        elapsed_ms: float,
+        message: str,
+    ) -> Dict[str, Any]:
+        return {
+            "success": success,
+            "message": message,
+            "existing_index_kept": False,
+            "elapsed_ms": round(elapsed_ms, 1),
+            "drug_count": len(index.drug_summary_map),
+            "alias_count": sum(len(v) for v in index.alias_map.values()),
+            "error_alias_count": sum(len(v) for v in index.error_alias_map.values()),
+            "ngram_token_count": len(index.ngram_index),
+            "loaded_at": index.loaded_at,
+        }

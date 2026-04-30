@@ -29,4 +29,6 @@ public class MedicationRequest {
     private LocalDate endDate;
 
     private boolean reminder = true;
+
+    private String sourceOcrRequestId;
 }

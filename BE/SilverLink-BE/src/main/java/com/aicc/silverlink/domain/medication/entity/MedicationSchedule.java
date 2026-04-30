@@ -31,6 +31,9 @@ public class MedicationSchedule {
     @JoinColumn(name = "source_ocr_log_id")
     private MedicationOcrLog sourceOcrLog;
 
+    @Column(name = "source_ocr_request_id", length = 100)
+    private String sourceOcrRequestId;
+
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
 
@@ -60,7 +63,7 @@ public class MedicationSchedule {
     @Builder
     public MedicationSchedule(Elderly elderly, String medicationName, String dosageText,
             LocalDate startDate, LocalDate endDate, IntakeTiming intakeTiming,
-            User createdBy, MedicationOcrLog sourceOcrLog) {
+            User createdBy, MedicationOcrLog sourceOcrLog, String sourceOcrRequestId) {
         this.elderly = elderly;
         this.medicationName = medicationName;
         this.dosageText = dosageText;
@@ -69,6 +72,7 @@ public class MedicationSchedule {
         this.intakeTiming = intakeTiming != null ? intakeTiming : IntakeTiming.ANYTIME;
         this.createdBy = createdBy;
         this.sourceOcrLog = sourceOcrLog;
+        this.sourceOcrRequestId = sourceOcrRequestId;
         this.isActive = true;
     }
 

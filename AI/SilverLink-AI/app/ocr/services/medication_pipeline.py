@@ -68,8 +68,6 @@ class MedicationPipeline:
 
     def reload_dictionary(self) -> bool:
         """Reload the underlying LocalDrugIndex if available."""
-        import logging
-        from loguru import logger
         drug_index = getattr(self.mysql_matcher, "dictionary_index", None)
 
         if not drug_index:
@@ -81,6 +79,13 @@ class MedicationPipeline:
             return False
 
         return drug_index.reload()
+
+    def reload_dictionary_stats(self) -> dict:
+        """Return the last LocalDrugIndex reload metrics if available."""
+        drug_index = getattr(self.mysql_matcher, "dictionary_index", None)
+        if not drug_index or not hasattr(drug_index, "reload_stats"):
+            return {}
+        return drug_index.reload_stats()
 
     async def process(
         self,

@@ -10,6 +10,7 @@ export interface MedicationResponse {
     startDate: string | null;
     endDate: string | null;
     instructions: string | null;
+    sourceOcrRequestId?: string | null;
 }
 
 export interface MedicationRequest {
@@ -20,6 +21,7 @@ export interface MedicationRequest {
     startDate?: string;
     endDate?: string;
     reminder?: boolean;
+    sourceOcrRequestId?: string;
 }
 
 /**

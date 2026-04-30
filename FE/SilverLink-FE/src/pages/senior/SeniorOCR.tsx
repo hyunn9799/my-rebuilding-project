@@ -119,6 +119,7 @@ const SeniorOCR = () => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [selectedCandidateIndex, setSelectedCandidateIndex] = useState(0);
   const [isConfirmingMedication, setIsConfirmingMedication] = useState(false);
+  const [confirmedOcrRequestId, setConfirmedOcrRequestId] = useState<string | null>(null);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -445,6 +446,7 @@ const SeniorOCR = () => {
     setSelectedMedications(new Set());
     setValidationResult(null);
     setSelectedCandidateIndex(0);
+    setConfirmedOcrRequestId(null);
     setImageStats(null);
     setProcessingStage('loading');
   };
@@ -482,6 +484,9 @@ const SeniorOCR = () => {
 
       if (response.alias_suggestion_created) {
         toast.success("확정 결과를 학습 후보로 저장했어요.");
+      }
+      if (confirmed) {
+        setConfirmedOcrRequestId(requestId);
       }
       return true;
     } catch (error: any) {
@@ -559,6 +564,7 @@ const SeniorOCR = () => {
           times: times,
           instructions: medication.instructions,
           reminder: true,
+          sourceOcrRequestId: confirmedOcrRequestId ?? undefined,
         };
 
         await medicationsApi.createMedication(request);

@@ -21,6 +21,7 @@ public class MedicationResponse {
     private String startDate;
     private String endDate;
     private String instructions;
+    private String sourceOcrRequestId;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -34,6 +35,7 @@ public class MedicationResponse {
                 .startDate(schedule.getStartDate() != null ? schedule.getStartDate().format(DATE_FORMATTER) : null)
                 .endDate(schedule.getEndDate() != null ? schedule.getEndDate().format(DATE_FORMATTER) : null)
                 .instructions(mapIntakeTimingToString(schedule.getIntakeTiming()))
+                .sourceOcrRequestId(schedule.getSourceOcrRequestId())
                 .build();
     }
 

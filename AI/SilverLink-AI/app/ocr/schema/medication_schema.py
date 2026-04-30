@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Any, List, Optional
 from datetime import date, datetime
 
 
@@ -116,6 +116,45 @@ class VectorStatusResponse(BaseModel):
     message: str = Field(..., description="상태 설명")
     is_degraded: bool = Field(..., description="검색 품질 저하 가능 여부")
     checked_at: datetime = Field(..., description="상태 확인 시각")
+
+
+class QualityReportRunRequest(BaseModel):
+    """관리자 OCR 품질 리포트 실행 요청"""
+    limit: int = Field(20, ge=1, le=200, description="분석할 샘플 수")
+    include_candidates: bool = Field(True, description="alias 후보 목록 포함 여부")
+    persist_files: bool = Field(False, description="서버 로컬 docs 파일 저장 여부")
+
+
+class QualityReportRunResponse(BaseModel):
+    """관리자 OCR 품질 리포트 실행 응답"""
+    success: bool = Field(..., description="실행 성공 여부")
+    generated_at: str = Field(..., description="리포트 생성 시각")
+    decision_counts: List[dict] = Field(default_factory=list)
+    suggestion_counts: List[dict] = Field(default_factory=list)
+    match_method_counts: List[Any] = Field(default_factory=list)
+    recommended_action_counts: dict = Field(default_factory=dict)
+    alias_candidate_count: int = 0
+    manual_review_count: int = 0
+    normalization_candidate_count: int = 0
+    report_markdown: str = ""
+    alias_candidates: List[dict] = Field(default_factory=list)
+    message: str = ""
+
+
+class QualityReportUpsertRequest(BaseModel):
+    """관리자 OCR 품질 리포트 alias 후보 등록 요청"""
+    limit: int = Field(20, ge=1, le=200, description="분석할 샘플 수")
+    confirm_write: bool = Field(False, description="DB write 명시 확인")
+
+
+class QualityReportUpsertResponse(BaseModel):
+    """관리자 OCR 품질 리포트 alias 후보 등록 응답"""
+    success: bool
+    upserted_count: int = 0
+    candidate_count: int = 0
+    skipped_count: int = 0
+    message: str = ""
+    generated_at: Optional[str] = None
 
 
 class PendingConfirmationItem(BaseModel):

@@ -5,10 +5,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Database,
+  FileSearch,
   Hash,
+  Link2,
   Loader2,
   Pill,
   RefreshCw,
+  TrendingDown,
+  TrendingUp,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,7 +21,10 @@ import { toast } from "sonner";
 import aliasAdminApi, {
   type AliasSuggestionItem,
   type AliasSuggestionPageResponse,
+  type QualityReportRunHistoryResponse,
+  type QualityReportRunHistoryItem,
 } from "@/api/aliasAdmin";
+import type { QualityReportRunResponse } from "@/api/aliasAdmin";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,6 +73,14 @@ const AliasManagement = () => {
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState("PENDING");
   const [isReloading, setIsReloading] = useState(false);
+  const [isRunningQualityReport, setIsRunningQualityReport] = useState(false);
+  const [isUpsertingQualityCandidates, setIsUpsertingQualityCandidates] = useState(false);
+  const [qualityReport, setQualityReport] = useState<QualityReportRunResponse | null>(null);
+  const [qualityRuns, setQualityRuns] = useState<QualityReportRunHistoryResponse>({
+    items: [],
+    trend: null,
+  });
+  const [isLoadingQualityRuns, setIsLoadingQualityRuns] = useState(false);
 
   const fetchData = useCallback(
     async (page = 1) => {
@@ -81,9 +97,25 @@ const AliasManagement = () => {
     [filterStatus],
   );
 
+  const fetchQualityRuns = useCallback(async () => {
+    setIsLoadingQualityRuns(true);
+    try {
+      const result = await aliasAdminApi.getQualityReportRuns(10);
+      setQualityRuns(result);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "OCR quality run history load failed."));
+    } finally {
+      setIsLoadingQualityRuns(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchData(1);
   }, [fetchData]);
+
+  useEffect(() => {
+    fetchQualityRuns();
+  }, [fetchQualityRuns]);
 
   const reviewerName = user?.name || "admin";
 
@@ -141,6 +173,54 @@ const AliasManagement = () => {
     }
   };
 
+  const handleRunQualityReport = async () => {
+    setIsRunningQualityReport(true);
+    try {
+      const result = await aliasAdminApi.runQualityReport({
+        limit: PAGE_SIZE,
+        include_candidates: true,
+        persist_files: false,
+      });
+      if (result.success) {
+        setQualityReport(result);
+        fetchQualityRuns();
+        toast.success(result.message || "OCR 품질 리포트를 실행했습니다.");
+      } else {
+        toast.error(result.message || "OCR 품질 리포트 실행에 실패했습니다.");
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error, "OCR 품질 리포트 실행에 실패했습니다."));
+    } finally {
+      setIsRunningQualityReport(false);
+    }
+  };
+
+  const handleUpsertQualityCandidates = async () => {
+    const confirmed = window.confirm(
+      "품질 리포트의 alias/error_alias 후보를 관리자 승인 대기열에 등록합니다. 계속할까요?",
+    );
+    if (!confirmed) return;
+
+    setIsUpsertingQualityCandidates(true);
+    try {
+      const result = await aliasAdminApi.upsertQualityReportAliasCandidates({
+        limit: PAGE_SIZE,
+        confirm_write: true,
+      });
+      if (result.success) {
+        toast.success(result.message || "품질 리포트 후보를 등록했습니다.");
+        fetchData(1);
+        fetchQualityRuns();
+      } else {
+        toast.error(result.message || "품질 리포트 후보 등록에 실패했습니다.");
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error, "품질 리포트 후보 등록에 실패했습니다."));
+    } finally {
+      setIsUpsertingQualityCandidates(false);
+    }
+  };
+
   const totalPages = Math.ceil(data.total / data.size) || 1;
 
   const formatDate = (dateStr?: string) => {
@@ -156,6 +236,42 @@ const AliasManagement = () => {
     } catch {
       return dateStr;
     }
+  };
+
+  const getDecisionCount = (status: string) => {
+    const row = qualityReport?.decision_counts?.find(item => item.decision_status === status);
+    const total = row?.total;
+    return typeof total === "number" ? total : 0;
+  };
+
+  const getRunLabel = (run: QualityReportRunHistoryItem) => {
+    if (run.action_type === "QUALITY_ALIAS_UPSERT") return "Alias upsert";
+    return "Quality report";
+  };
+
+  const renderTrendValue = (label: string, value?: number, lowerIsBetter = false) => {
+    const delta = value ?? 0;
+    const improved = lowerIsBetter ? delta < 0 : delta > 0;
+    const worsened = lowerIsBetter ? delta > 0 : delta < 0;
+    const colorClass = improved
+      ? "text-green-700"
+      : worsened
+        ? "text-red-700"
+        : "text-muted-foreground";
+
+    return (
+      <div className="rounded-md border bg-background p-3">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className={`mt-1 flex items-center gap-1 text-lg font-bold ${colorClass}`}>
+          {delta > 0 ? (
+            <TrendingUp className="h-4 w-4" />
+          ) : delta < 0 ? (
+            <TrendingDown className="h-4 w-4" />
+          ) : null}
+          {delta > 0 ? `+${delta}` : delta}
+        </p>
+      </div>
+    );
   };
 
   return (
@@ -220,6 +336,130 @@ const AliasManagement = () => {
           </CardContent>
         </Card>
 
+        <Card className="shadow-card border-0">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileSearch className="h-4 w-4 text-info" />
+              OCR 품질 리포트
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                variant="outline"
+                onClick={handleRunQualityReport}
+                disabled={isRunningQualityReport || isUpsertingQualityCandidates}
+                className="gap-2"
+              >
+                {isRunningQualityReport ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileSearch className="h-4 w-4" />
+                )}
+                품질 리포트 실행
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleUpsertQualityCandidates}
+                disabled={isRunningQualityReport || isUpsertingQualityCandidates}
+                className="gap-2"
+              >
+                {isUpsertingQualityCandidates ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Database className="h-4 w-4" />
+                )}
+                alias 후보 등록
+              </Button>
+            </div>
+
+            {qualityReport && (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="rounded-md border bg-background p-3">
+                  <p className="text-xs text-muted-foreground">생성 시각</p>
+                  <p className="mt-1 text-sm font-semibold">{formatDate(qualityReport.generated_at)}</p>
+                </div>
+                <div className="rounded-md border bg-background p-3">
+                  <p className="text-xs text-muted-foreground">MATCHED</p>
+                  <p className="mt-1 text-lg font-bold text-green-700">{getDecisionCount("MATCHED")}</p>
+                </div>
+                <div className="rounded-md border bg-background p-3">
+                  <p className="text-xs text-muted-foreground">alias 후보</p>
+                  <p className="mt-1 text-lg font-bold text-blue-700">{qualityReport.alias_candidate_count ?? 0}</p>
+                </div>
+                <div className="rounded-md border bg-background p-3">
+                  <p className="text-xs text-muted-foreground">수동 검토</p>
+                  <p className="mt-1 text-lg font-bold text-amber-700">{qualityReport.manual_review_count ?? 0}</p>
+                </div>
+                <div className="rounded-md border bg-background p-3">
+                  <p className="text-xs text-muted-foreground">정규화 후보</p>
+                  <p className="mt-1 text-lg font-bold text-purple-700">{qualityReport.normalization_candidate_count ?? 0}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3 border-t pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">Recent quality runs</h2>
+                  <p className="text-xs text-muted-foreground">Latest report and alias upsert audit trail</p>
+                </div>
+                {isLoadingQualityRuns && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+
+              {qualityRuns.trend && (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {renderTrendValue("MATCHED delta", qualityRuns.trend.matched_delta)}
+                  {renderTrendValue("Pending delta", qualityRuns.trend.pending_review_delta, true)}
+                  {renderTrendValue("Alias delta", qualityRuns.trend.alias_candidate_delta, true)}
+                  {renderTrendValue("Manual delta", qualityRuns.trend.manual_review_delta, true)}
+                  {renderTrendValue("Normalize delta", qualityRuns.trend.normalization_candidate_delta, true)}
+                </div>
+              )}
+
+              {qualityRuns.items.length > 0 ? (
+                <div className="space-y-2">
+                  {qualityRuns.items.slice(0, 5).map((run) => (
+                    <div
+                      key={run.id}
+                      className="flex flex-col justify-between gap-2 rounded-md border bg-background p-3 sm:flex-row sm:items-center"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-foreground">{getRunLabel(run)}</span>
+                          <Badge
+                            variant="outline"
+                            className={
+                              run.success
+                                ? "border-green-200 bg-green-50 text-green-700"
+                                : "border-red-200 bg-red-50 text-red-700"
+                            }
+                          >
+                            {run.success ? "SUCCESS" : "FAILED"}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">{run.message || "-"}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span>{formatDate(run.created_at)}</span>
+                        {run.action_type === "QUALITY_ALIAS_UPSERT" ? (
+                          <span>upserted {run.upserted_count ?? 0}/{run.candidate_count ?? 0}</span>
+                        ) : (
+                          <span>
+                            matched {run.matched_count ?? 0}, pending {run.pending_review_count ?? 0}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No quality run history yet.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         {isLoading ? (
           <Card className="shadow-card border-0">
             <CardContent className="p-12 text-center">
@@ -279,13 +519,24 @@ const AliasManagement = () => {
                               {item.source}
                             </Badge>
                           )}
+                          {item.source === "ocr_quality_report" && (
+                            <Badge variant="outline" className="border-purple-200 bg-purple-50 text-xs text-purple-700">
+                              품질 리포트
+                            </Badge>
+                          )}
                         </div>
 
-                        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
                             {formatDate(item.created_at)}
                           </span>
+                          {item.source_request_id && (
+                            <span className="flex items-center gap-1">
+                              <Link2 className="h-3 w-3" />
+                              요청 {item.source_request_id}
+                            </span>
+                          )}
                           {item.reviewed_by && (
                             <span>
                               검토자 {item.reviewed_by} ({formatDate(item.reviewed_at)})
