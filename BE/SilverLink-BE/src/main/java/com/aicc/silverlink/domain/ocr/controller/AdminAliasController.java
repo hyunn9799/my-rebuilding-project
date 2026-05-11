@@ -51,9 +51,12 @@ public class AdminAliasController {
     public ResponseEntity<AliasSuggestionPageResponse> getAliasSuggestions(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(defaultValue = "PENDING") String reviewStatus) {
+            @RequestParam(defaultValue = "PENDING") String reviewStatus,
+            @RequestParam(defaultValue = "priority") String sortBy,
+            @RequestParam(defaultValue = "ALL") String ocrFilter) {
 
-        log.info("Admin alias suggestions request: page={}, size={}, status={}", page, size, reviewStatus);
+        log.info("Admin alias suggestions request: page={}, size={}, status={}, sort={}, ocrFilter={}",
+                page, size, reviewStatus, sortBy, ocrFilter);
 
         try {
             String pythonUrl = UriComponentsBuilder
@@ -61,6 +64,8 @@ public class AdminAliasController {
                     .queryParam("page", page)
                     .queryParam("size", size)
                     .queryParam("review_status", reviewStatus)
+                    .queryParam("sort_by", sortBy)
+                    .queryParam("ocr_filter", ocrFilter)
                     .build()
                     .encode()
                     .toUriString();

@@ -387,6 +387,8 @@ async def get_alias_suggestions(
     page: int = 1,
     size: int = 20,
     review_status: str = "PENDING",
+    sort_by: str = "priority",
+    ocr_filter: str = "ALL",
     _: None = Depends(verify_internal_secret),
     alias_suggestion_repo: AliasSuggestionRepository = Depends(Provide[Container.alias_suggestion_repository]),
 ):
@@ -395,6 +397,8 @@ async def get_alias_suggestions(
             page=page,
             size=size,
             review_status=review_status if review_status != "ALL" else None,
+            sort_by=sort_by,
+            ocr_filter=ocr_filter if ocr_filter != "ALL" else None,
         )
     except Exception as exc:
         raise HTTPException(

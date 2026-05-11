@@ -60,6 +60,12 @@ public class AliasSuggestionPageResponse {
         @JsonProperty("priority_reason")
         private String priorityReason;
 
+        @JsonProperty("decision_status")
+        private String decisionStatus;
+
+        @JsonProperty("match_confidence")
+        private Double matchConfidence;
+
         @JsonProperty("is_active")
         private Integer isActive;
 

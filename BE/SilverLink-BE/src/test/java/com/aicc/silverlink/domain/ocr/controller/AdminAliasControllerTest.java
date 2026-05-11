@@ -60,17 +60,42 @@ class AdminAliasControllerTest {
 
         ArgumentCaptor<HttpEntity<Void>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
         when(restTemplate.exchange(
-                eq(PYTHON_URL + "/api/ocr/admin/alias-suggestions?page=2&size=5&review_status=PENDING"),
+                eq(PYTHON_URL + "/api/ocr/admin/alias-suggestions?page=2&size=5&review_status=PENDING&sort_by=priority&ocr_filter=ALL"),
                 eq(HttpMethod.GET),
                 entityCaptor.capture(),
                 eq(AliasSuggestionPageResponse.class)))
                 .thenReturn(ResponseEntity.ok(body));
 
-        ResponseEntity<AliasSuggestionPageResponse> response = controller.getAliasSuggestions(2, 5, "PENDING");
+        ResponseEntity<AliasSuggestionPageResponse> response = controller.getAliasSuggestions(
+                2, 5, "PENDING", "priority", "ALL");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isSameAs(body);
         assertThat(entityCaptor.getValue().getHeaders().getFirst(SECRET_HEADER)).isEqualTo(SECRET_KEY);
+    }
+
+    @Test
+    @DisplayName("alias suggestion list forwards OCR sort and filter options")
+    void getAliasSuggestionsForwardsSortAndOcrFilterOptions() {
+        AliasSuggestionPageResponse body = AliasSuggestionPageResponse.builder()
+                .items(List.of())
+                .total(0)
+                .page(1)
+                .size(20)
+                .build();
+
+        when(restTemplate.exchange(
+                eq(PYTHON_URL + "/api/ocr/admin/alias-suggestions?page=1&size=20&review_status=ALL&sort_by=low_confidence&ocr_filter=source%3Dvector_db"),
+                eq(HttpMethod.GET),
+                org.mockito.ArgumentMatchers.<HttpEntity<Void>>any(),
+                eq(AliasSuggestionPageResponse.class)))
+                .thenReturn(ResponseEntity.ok(body));
+
+        ResponseEntity<AliasSuggestionPageResponse> response = controller.getAliasSuggestions(
+                1, 20, "ALL", "low_confidence", "source=vector_db");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isSameAs(body);
     }
 
     @Test

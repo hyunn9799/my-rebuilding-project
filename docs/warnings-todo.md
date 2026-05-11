@@ -13,7 +13,8 @@ Current validation status:
 Open warnings to handle later:
 
 - FE build warning: Browserslist `caniuse-lite` data is outdated.
-  - Suggested action: run `npx update-browserslist-db@latest`, inspect lockfile changes, and verify `npm.cmd run build`.
+  - Status: handled in Phase 26B by updating `caniuse-lite`/`browserslist` through npm because `update-browserslist-db` selected `bun` from `bun.lockb` and failed when `bun` was unavailable.
+  - Follow-up: verify this warning stays absent on the next FE build.
 - FE build warning: some Vite chunks exceed 500 KB after minification.
   - Suggested action: inspect the largest `index-*.js` bundle contributors and consider route-level lazy loading or `vite.config.ts` `manualChunks`.
 - AI pytest warning count: targeted OCR tests pass with 6 warnings.
@@ -30,7 +31,8 @@ Open warnings to handle later:
 ## Frontend
 
 - `npm.cmd run build` 경고: Browserslist `caniuse-lite` 데이터가 오래됨.
-  - 권장 작업: `npx update-browserslist-db@latest` 실행 후 lockfile 변경 확인.
+  - 상태: Phase 26B에서 npm 기반 업데이트로 정리.
+  - 참고: `npx update-browserslist-db@latest`는 `bun.lockb` 때문에 `bun`을 선택해 실패할 수 있음.
 - `npm.cmd run build` 경고: 일부 Vite chunk가 500KB를 초과함.
   - 권장 작업: 라우트 단위 lazy loading 상태 재점검.
   - 권장 작업: `vite.config.ts`의 `build.rollupOptions.output.manualChunks` 적용 검토.

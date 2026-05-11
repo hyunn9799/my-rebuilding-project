@@ -62,6 +62,9 @@ class OcrQualityReportRunServiceTest {
         assertThat(found.getAliasCandidateCount()).isEqualTo(5);
         assertThat(found.getManualReviewCount()).isEqualTo(6);
         assertThat(found.getNormalizationCandidateCount()).isEqualTo(1);
+        assertThat(found.getSummarySnapshot()).contains("summary_metrics_only");
+        assertThat(found.getSummarySnapshot()).contains("decision_counts");
+        assertThat(found.getSummarySnapshot()).doesNotContain("raw_ocr_text");
         assertThat(found.getCreatedAt()).isNotNull();
     }
 
@@ -91,6 +94,8 @@ class OcrQualityReportRunServiceTest {
         assertThat(found.getCandidateCount()).isEqualTo(8);
         assertThat(found.getUpsertedCount()).isEqualTo(6);
         assertThat(found.getSkippedCount()).isEqualTo(2);
+        assertThat(found.getSummarySnapshot()).contains("summary_metrics_only");
+        assertThat(found.getSummarySnapshot()).contains("upserted_count");
     }
 
     @Test
@@ -121,6 +126,7 @@ class OcrQualityReportRunServiceTest {
         QualityReportRunHistoryResponse allItems = service.getRecentRuns(50);
         assertThat(allItems.getItems()).hasSize(3);
         assertThat(allItems.getItems().get(0).getMessage()).isEqualTo("current");
+        assertThat(allItems.getItems().get(0).getSummarySnapshot()).contains("summary_metrics_only");
         assertThat(allItems.getTrend()).isNotNull();
         assertThat(allItems.getTrend().getMatchedDelta()).isEqualTo(4);
         assertThat(allItems.getTrend().getPendingReviewDelta()).isEqualTo(-2);

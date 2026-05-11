@@ -142,6 +142,8 @@ class AliasSuggestionRepository:
         page: int = 1,
         size: int = 20,
         review_status: Optional[str] = "PENDING",
+        sort_by: str = "priority",
+        ocr_filter: Optional[str] = None,
     ) -> Dict:
         """페이징 지원 alias 제안 목록 조회 (관리자 UI용).
 
@@ -153,17 +155,33 @@ class AliasSuggestionRepository:
             connection = self._get_connection()
             with connection.cursor() as cursor:
                 # 필터 조건
-                where_clause = ""
+                where_conditions: list[str] = []
                 params: list = []
                 if review_status:
-                    where_clause = "WHERE s.review_status = %s"
+                    where_conditions.append("s.review_status = %s")
                     params.append(review_status)
+                if ocr_filter and ocr_filter != "ALL":
+                    if ocr_filter in {"MATCHED", "NEED_USER_CONFIRMATION", "LOW_CONFIDENCE", "AMBIGUOUS"}:
+                        where_conditions.append("r.decision_status = %s")
+                        params.append(ocr_filter)
+                    elif ocr_filter == "alias_conflict":
+                        where_conditions.append("s.suggestion_type = 'error_alias'")
+                    elif ocr_filter == "source=vector_db":
+                        where_conditions.append("(s.source = 'vector_db' OR CAST(r.candidates AS CHAR) LIKE %s)")
+                        params.append("%vector%")
+                    elif ocr_filter == "source=llm_hint":
+                        where_conditions.append("(s.source = 'llm_hint' OR CAST(r.candidates AS CHAR) LIKE %s)")
+                        params.append("%llm%")
+
+                where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
+                order_clause = self._alias_suggestion_order_clause(sort_by)
 
                 # 전체 건수
                 cursor.execute(
                     f"""
                     SELECT COUNT(*) as total
                     FROM medication_alias_suggestions s
+                    LEFT JOIN medication_ocr_results r ON r.request_id = s.source_request_id
                     {where_clause}
                     """,
                     tuple(params),
@@ -174,16 +192,13 @@ class AliasSuggestionRepository:
                 offset = (page - 1) * size
                 cursor.execute(
                     f"""
-                    SELECT s.*, m.item_name
+                    SELECT s.*, m.item_name,
+                           r.decision_status, r.match_confidence
                     FROM medication_alias_suggestions s
                     LEFT JOIN medications_master m ON m.item_seq = s.item_seq
+                    LEFT JOIN medication_ocr_results r ON r.request_id = s.source_request_id
                     {where_clause}
-                    ORDER BY
-                        (LEAST(s.frequency, 20) * 3)
-                        + CASE WHEN s.source = 'ocr_quality_report' THEN 20 ELSE 0 END
-                        + CASE WHEN s.suggestion_type = 'error_alias' THEN 10 ELSE 0 END DESC,
-                        s.frequency DESC,
-                        s.created_at DESC
+                    ORDER BY {order_clause}
                     LIMIT %s OFFSET %s
                     """,
                     tuple(params + [size, offset]),
@@ -209,6 +224,27 @@ class AliasSuggestionRepository:
         finally:
             if connection:
                 connection.close()
+
+    def _alias_suggestion_order_clause(self, sort_by: str) -> str:
+        priority_expr = (
+            "(LEAST(s.frequency, 20) * 3) "
+            "+ CASE WHEN s.source = 'ocr_quality_report' THEN 20 ELSE 0 END "
+            "+ CASE WHEN s.suggestion_type = 'error_alias' THEN 10 ELSE 0 END"
+        )
+        if sort_by == "newest":
+            return "s.created_at DESC, s.frequency DESC, s.id DESC"
+        if sort_by == "low_confidence":
+            return (
+                "CASE WHEN r.match_confidence IS NULL THEN 1 ELSE 0 END ASC, "
+                "r.match_confidence ASC, "
+                f"{priority_expr} DESC, s.created_at DESC"
+            )
+        if sort_by == "alias_conflict":
+            return (
+                "CASE WHEN s.suggestion_type = 'error_alias' THEN 0 ELSE 1 END ASC, "
+                f"{priority_expr} DESC, s.frequency DESC, s.created_at DESC"
+            )
+        return f"{priority_expr} DESC, s.frequency DESC, s.created_at DESC"
 
     # ──────────────────────────────────────────────
     # 관리자 승인/거부

@@ -44,6 +44,9 @@ public class QualityReportRunHistoryItem {
     @JsonProperty("skipped_count")
     private Integer skippedCount;
 
+    @JsonProperty("summary_snapshot")
+    private String summarySnapshot;
+
     private String message;
 
     @JsonProperty("created_at")

@@ -15,6 +15,8 @@ export interface AliasSuggestionItem {
     frequency: number;
     priority_score?: number;
     priority_reason?: string;
+    decision_status?: string;
+    match_confidence?: number;
     is_active: number;
     reviewed_by?: string;
     reviewed_at?: string;
@@ -86,6 +88,7 @@ export interface QualityReportRunHistoryItem {
     candidate_count?: number;
     upserted_count?: number;
     skipped_count?: number;
+    summary_snapshot?: string;
     message?: string;
     created_at?: string;
 }
@@ -111,10 +114,12 @@ export const getAliasSuggestions = async (
     page: number = 1,
     size: number = 20,
     reviewStatus: string = 'PENDING',
+    sortBy: string = 'priority',
+    ocrFilter: string = 'ALL',
 ): Promise<AliasSuggestionPageResponse> => {
     const response = await apiClient.get<AliasSuggestionPageResponse>(
         '/api/admin/alias-suggestions',
-        { params: { page, size, reviewStatus } },
+        { params: { page, size, reviewStatus, sortBy, ocrFilter } },
     );
     return response.data;
 };

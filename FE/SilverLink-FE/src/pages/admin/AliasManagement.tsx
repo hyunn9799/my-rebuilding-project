@@ -12,6 +12,7 @@ import {
   Loader2,
   Pill,
   RefreshCw,
+  SlidersHorizontal,
   TrendingDown,
   TrendingUp,
   XCircle,
@@ -40,6 +41,24 @@ import { adminNavItems } from "@/config/adminNavItems";
 import { useAuth } from "@/contexts/AuthContext";
 
 const PAGE_SIZE = 20;
+
+const sortOptions = [
+  { value: "newest", label: "최신순" },
+  { value: "low_confidence", label: "신뢰도 낮은순" },
+  { value: "priority", label: "처리 필요 우선" },
+  { value: "alias_conflict", label: "alias 충돌 우선" },
+];
+
+const ocrFilterOptions = [
+  { value: "ALL", label: "전체" },
+  { value: "MATCHED", label: "MATCHED" },
+  { value: "NEED_USER_CONFIRMATION", label: "NEED_USER_CONFIRMATION" },
+  { value: "LOW_CONFIDENCE", label: "LOW_CONFIDENCE" },
+  { value: "AMBIGUOUS", label: "AMBIGUOUS" },
+  { value: "alias_conflict", label: "alias_conflict" },
+  { value: "source=vector_db", label: "source=vector_db" },
+  { value: "source=llm_hint", label: "source=llm_hint" },
+];
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   PENDING: { label: "대기", color: "bg-amber-100 text-amber-700 border-amber-200" },
@@ -72,6 +91,8 @@ const AliasManagement = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState("PENDING");
+  const [sortBy, setSortBy] = useState("priority");
+  const [ocrFilter, setOcrFilter] = useState("ALL");
   const [isReloading, setIsReloading] = useState(false);
   const [isRunningQualityReport, setIsRunningQualityReport] = useState(false);
   const [isUpsertingQualityCandidates, setIsUpsertingQualityCandidates] = useState(false);
@@ -86,7 +107,13 @@ const AliasManagement = () => {
     async (page = 1) => {
       setIsLoading(true);
       try {
-        const result = await aliasAdminApi.getAliasSuggestions(page, PAGE_SIZE, filterStatus);
+        const result = await aliasAdminApi.getAliasSuggestions(
+          page,
+          PAGE_SIZE,
+          filterStatus,
+          sortBy,
+          ocrFilter,
+        );
         setData(result);
       } catch (error) {
         toast.error(getErrorMessage(error, "Alias 제안 목록을 불러오지 못했습니다."));
@@ -94,7 +121,7 @@ const AliasManagement = () => {
         setIsLoading(false);
       }
     },
-    [filterStatus],
+    [filterStatus, sortBy, ocrFilter],
   );
 
   const fetchQualityRuns = useCallback(async () => {
@@ -312,25 +339,64 @@ const AliasManagement = () => {
 
         <Card className="shadow-card border-0">
           <CardContent className="p-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="flex flex-1 items-center gap-2">
-                <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">
-                  상태 필터
-                </span>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PENDING">대기</SelectItem>
-                    <SelectItem value="APPROVED">승인됨</SelectItem>
-                    <SelectItem value="REJECTED">거부됨</SelectItem>
-                    <SelectItem value="ALL">전체</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+              <div className="grid flex-1 gap-3 sm:grid-cols-3">
+                <div className="flex items-center gap-2">
+                  <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">
+                    상태
+                  </span>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="min-w-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PENDING">대기</SelectItem>
+                      <SelectItem value="APPROVED">승인됨</SelectItem>
+                      <SelectItem value="REJECTED">거부됨</SelectItem>
+                      <SelectItem value="ALL">전체</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">
+                    정렬
+                  </span>
+                  <Select value={sortBy} onValueChange={setSortBy}>
+                    <SelectTrigger className="min-w-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sortOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">
+                    OCR
+                  </span>
+                  <Select value={ocrFilter} onValueChange={setOcrFilter}>
+                    <SelectTrigger className="min-w-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ocrFilterOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="text-sm text-muted-foreground">
-                총 <span className="font-bold text-foreground">{data.total}</span>건
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <SlidersHorizontal className="h-4 w-4" />
+                <span>
+                  총 <span className="font-bold text-foreground">{data.total}</span>건
+                </span>
               </div>
             </div>
           </CardContent>
@@ -372,6 +438,9 @@ const AliasManagement = () => {
                 alias 후보 등록
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              품질 리포트는 운영자가 필요할 때 수동 실행합니다. 장기 이력은 OCR 원문이 아닌 decision/method/action summary snapshot만 저장합니다.
+            </p>
 
             {qualityReport && (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -526,6 +595,16 @@ const AliasManagement = () => {
                           {item.source && (
                             <Badge variant="outline" className="text-xs">
                               {item.source}
+                            </Badge>
+                          )}
+                          {item.decision_status && (
+                            <Badge variant="outline" className="text-xs">
+                              {item.decision_status}
+                            </Badge>
+                          )}
+                          {typeof item.match_confidence === "number" && (
+                            <Badge variant="outline" className="text-xs">
+                              conf {Math.round(item.match_confidence * 100)}%
                             </Badge>
                           )}
                           {item.source === "ocr_quality_report" && (

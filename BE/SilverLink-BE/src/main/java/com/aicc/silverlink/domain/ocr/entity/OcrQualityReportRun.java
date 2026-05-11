@@ -64,6 +64,9 @@ public class OcrQualityReportRun {
     @Column(name = "skipped_count")
     private Integer skippedCount;
 
+    @Column(name = "summary_snapshot", length = 4000)
+    private String summarySnapshot;
+
     @Column(name = "message", length = 1000)
     private String message;
 

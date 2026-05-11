@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -51,6 +52,7 @@ public class OcrQualityReportRunService {
                 .aliasCandidateCount(valueOrZero(response != null ? response.getAliasCandidateCount() : null))
                 .manualReviewCount(valueOrZero(response != null ? response.getManualReviewCount() : null))
                 .normalizationCandidateCount(valueOrZero(response != null ? response.getNormalizationCandidateCount() : null))
+                .summarySnapshot(buildReportSummarySnapshot(response))
                 .message(message)
                 .build();
         return repository.save(run);
@@ -71,6 +73,7 @@ public class OcrQualityReportRunService {
                 .candidateCount(valueOrZero(response != null ? response.getCandidateCount() : null))
                 .upsertedCount(valueOrZero(response != null ? response.getUpsertedCount() : null))
                 .skippedCount(valueOrZero(response != null ? response.getSkippedCount() : null))
+                .summarySnapshot(buildUpsertSummarySnapshot(response))
                 .message(message)
                 .build();
         return repository.save(run);
@@ -125,9 +128,33 @@ public class OcrQualityReportRunService {
                 .candidateCount(run.getCandidateCount())
                 .upsertedCount(run.getUpsertedCount())
                 .skippedCount(run.getSkippedCount())
+                .summarySnapshot(run.getSummarySnapshot())
                 .message(run.getMessage())
                 .createdAt(run.getCreatedAt() != null ? run.getCreatedAt().toString() : null)
                 .build();
+    }
+
+    private String buildReportSummarySnapshot(QualityReportRunResponse response) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("storage_policy", "summary_metrics_only");
+        snapshot.put("generated_at", response != null ? response.getGeneratedAt() : null);
+        snapshot.put("decision_counts", response != null ? response.getDecisionCounts() : List.of());
+        snapshot.put("match_method_counts", response != null ? response.getMatchMethodCounts() : List.of());
+        snapshot.put("recommended_action_counts", response != null ? response.getRecommendedActionCounts() : Map.of());
+        snapshot.put("alias_candidate_count", valueOrZero(response != null ? response.getAliasCandidateCount() : null));
+        snapshot.put("manual_review_count", valueOrZero(response != null ? response.getManualReviewCount() : null));
+        snapshot.put("normalization_candidate_count", valueOrZero(response != null ? response.getNormalizationCandidateCount() : null));
+        return snapshot.toString();
+    }
+
+    private String buildUpsertSummarySnapshot(QualityReportUpsertResponse response) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("storage_policy", "summary_metrics_only");
+        snapshot.put("generated_at", response != null ? response.getGeneratedAt() : null);
+        snapshot.put("candidate_count", valueOrZero(response != null ? response.getCandidateCount() : null));
+        snapshot.put("upserted_count", valueOrZero(response != null ? response.getUpsertedCount() : null));
+        snapshot.put("skipped_count", valueOrZero(response != null ? response.getSkippedCount() : null));
+        return snapshot.toString();
     }
 
     private int countPendingReviews(QualityReportRunResponse response) {
